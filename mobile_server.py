@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 from src.catalog import image_path, load_catalog, pairs, search_pairs
 from src.cues import get_image_cue, load_cue_model
 from src.dossiers import load_dossier
-from src.model_results import change_for, change_scores, models_summary, scenarios
+from src.model_results import change_for, change_scores, models_summary, scenarios, water_for
 from src.reviews import load_reviews_index, save_review
 
 ROOT = Path(__file__).resolve().parent
@@ -66,6 +66,8 @@ def pair_data(
 
     # Photo change model (self-supervised, trained on Colab): rank + heatmap
     record["change"] = change_for(after["image_id"])
+    # Floodwater colour index (rule-based, validated by eye): rank + heatmap
+    record["water"] = water_for(after["image_id"])
 
     # Human review status if reviewed
     reviews_map = load_reviews_index(reviews_file)

@@ -37,6 +37,15 @@ def change_for(after_id: str) -> dict | None:
 
 
 @lru_cache(maxsize=1)
+def water_scores() -> dict:
+    return _read(APP_DATA / "waterScores.json") or {"model": {}, "pairs": {}}
+
+
+def water_for(after_id: str) -> dict | None:
+    return water_scores().get("pairs", {}).get(after_id)
+
+
+@lru_cache(maxsize=1)
 def scenarios() -> dict:
     return _read(APP_DATA / "floodScenarios.json") or {"model": {"trained": False}, "scenarios": []}
 
@@ -76,4 +85,7 @@ def models_summary() -> dict:
             "checks": cd["checks"],
             "baseline": "naive feature distance without the camera translator",
         }
+    ws = water_scores().get("model")
+    if ws:
+        out["floodwater_colour_index"] = ws
     return out

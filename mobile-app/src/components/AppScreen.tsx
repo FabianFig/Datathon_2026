@@ -26,7 +26,7 @@ import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import catalogRaw from '../data/catalog.json';
 import { samplePairs } from '../data/samplePairs';
 import { RiseScreen } from './RiseScreen';
-import { ChangeCard, changeFor } from './ChangeCard';
+import { ChangeCard, waterFor } from './ChangeCard';
 
 export type CueScore = {
   cue_score: number;
@@ -74,7 +74,7 @@ export type Pair = {
 };
 
 type Tab = 'Rise' | 'Explore' | 'Compare' | 'Settings';
-type FilterMode = 'all' | 'high_priority' | 'most_changed' | 'reviewed';
+type FilterMode = 'all' | 'high_priority' | 'floodwater' | 'reviewed';
 
 // Every UTSA before/after pair ships with the app (export_catalog.py), so
 // Expo Go shows the whole dataset without a server. The original sample
@@ -194,8 +194,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (filterMode === 'high_priority') {
         return p.dossier?.review_priority === 'high' || (p.after_cue?.above_threshold ?? false);
       }
-      if (filterMode === 'most_changed') {
-        return (changeFor(p.after_id)?.percentile ?? 0) >= 90;
+      if (filterMode === 'floodwater') {
+        return (waterFor(p.after_id)?.percentile ?? 0) >= 70;
       }
       if (filterMode === 'reviewed') {
         return !!p.review;
@@ -514,7 +514,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
                 [
                   { key: 'all', label: `All Pairs (${pairs.length})` },
                   { key: 'high_priority', label: 'Flagged Evidence' },
-                  { key: 'most_changed', label: 'Most changed' },
+                  { key: 'floodwater', label: 'Most floodwater' },
                   { key: 'reviewed', label: 'Human Reviewed' },
                 ] as const
               ).map(item => (
@@ -598,8 +598,8 @@ export function AppScreen({ tab }: { tab: Tab }) {
                           <Text style={s.cueAlertText}>Flood Cue Flag</Text>
                         </View>
                       )}
-                      {(changeFor(item.after_id)?.percentile ?? 0) >= 90 && (
-                        <Text style={s.rowSourceTag}>Most changed</Text>
+                      {(waterFor(item.after_id)?.percentile ?? 0) >= 70 && (
+                        <Text style={s.rowSourceTag}>Floodwater</Text>
                       )}
                       {isReviewed && (
                         <View style={s.reviewedPill}>
