@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useIsFocused } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { DeviceMotion } from 'expo-sensors';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -23,7 +24,6 @@ import {
   focalPx,
   offsetForDepression,
   poseFromUp,
-  rotatedOffset,
   type Pose,
   type Vec3,
 } from '../lib/arGeometry';
@@ -139,7 +139,6 @@ function usePose(enabled: boolean, pitchOffset: number): { pose: Pose; status: S
 
 // --------------------------------------------------------------------------- AR overlay
 const FT = 0.3048;
-const GAUGE_FT = 7;
 
 /**
  * Water drawn as a horizontal plane at depth `depthM`, plus a staff gauge (the
@@ -154,8 +153,6 @@ function WaterOverlay({
   fovDeg,
   eyeM,
   distM,
-  spotX,
-  spotSet,
   depthM,
   flow,
 }: {
@@ -165,8 +162,6 @@ function WaterOverlay({
   fovDeg: number;
   eyeM: number;
   distM: number;
-  spotX: number;
-  spotSet: boolean;
   depthM: number;
   flow: number;
 }) {
@@ -189,17 +184,12 @@ function WaterOverlay({
     }
   }
 
-  // Staff gauge: 7 ft post at the spot, one band per half foot.
-  const postW = Math.max(8, Math.min(26, (f * 0.12) / distM));
-  const postX = mid + spotX;
-  const bands = [];
-  for (let k = 0; k < GAUGE_FT * 2; k++) {
-    const y0 = yAt((k + 1) * 0.5 * FT);
-    const y1 = yAt(k * 0.5 * FT);
-    bands.push({ top: mid + y0, h: Math.max(1, y1 - y0), dark: k % 2 === 1 });
-  }
-  const labels = [1, 2, 3, 4, 5, 6, 7].map(ft => ({ ft, y: mid + yAt(ft * FT) }));
-  const headY = mid + yAt(5.7 * FT);
+  // Depth scale: heights are projected at the spot's distance but drawn at the
+  // left edge, so it stays out of the way and reads the same wherever you aim.
+  const scaleX = mid - W / 2 + 22;
+  const ticks = [1, 2, 3, 4, 5, 6, 7].map(ft => ({ ft, y: mid + yAt(ft * FT) }));
+  const topY = ticks[6].y;
+  const baseY = mid + groundY;
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -213,18 +203,18 @@ function WaterOverlay({
           transform: [{ rotate: `${pose.roll}rad` }],
         }}
       >
-        {/* staff gauge, drawn first so the water covers its lower part */}
-        <View style={{ position: 'absolute', left: postX - postW / 2 - 2, width: postW + 4, top: labels[6].y - 2, height: mid + groundY - labels[6].y + 2, backgroundColor: 'rgba(17,24,21,0.55)', borderRadius: 3 }} />
-        {bands.map((b, k) => (
-          <View key={k} style={{ position: 'absolute', left: postX - postW / 2, width: postW, top: b.top, height: b.h, backgroundColor: b.dark ? '#1F2924' : '#F6F7F2' }} />
+        {/* depth scale at the left edge, drawn first so the water covers its lower part */}
+        <View style={{ position: 'absolute', left: scaleX - 1, width: 3, top: topY, height: Math.max(0, baseY - topY), backgroundColor: 'rgba(0,0,0,0.25)' }} />
+        <View style={{ position: 'absolute', left: scaleX, width: 1.5, top: topY, height: Math.max(0, baseY - topY), backgroundColor: 'rgba(255,255,255,0.85)' }} />
+        {ticks.map(t => (
+          <View key={t.ft}>
+            <View style={{ position: 'absolute', left: scaleX, width: t.ft % 2 === 0 ? 12 : 7, top: t.y - 0.75, height: 1.5, backgroundColor: 'rgba(255,255,255,0.85)' }} />
+            {t.ft % 2 === 0 && (
+              <Text style={[st.scaleLabel, { left: scaleX + 15, top: t.y - 8 }]}>{t.ft} ft</Text>
+            )}
+          </View>
         ))}
-        {labels.map(l => (
-          <Text key={l.ft} style={[st.gaugeLabel, { left: postX + postW / 2 + 6, top: l.y - 9 }]}>
-            {l.ft}
-          </Text>
-        ))}
-        <View style={{ position: 'absolute', left: postX - postW / 2 - 10, width: postW + 20, top: headY - 1, height: 2, backgroundColor: '#DC2626' }} />
-        <Text style={[st.gaugeNote, { left: postX - postW / 2 - 92, top: headY - 9 }]}>adult head</Text>
+        <View style={{ position: 'absolute', left: scaleX - 4, width: 16, top: baseY - 0.75, height: 1.5, backgroundColor: 'rgba(255,255,255,0.85)' }} />
 
         {wet && (
           <>
@@ -236,20 +226,6 @@ function WaterOverlay({
           </>
         )}
 
-        {/* spot marker on the ground */}
-        <View
-          style={{
-            position: 'absolute',
-            left: postX - 22,
-            top: mid + groundY - 7,
-            width: 44,
-            height: 14,
-            borderRadius: 22,
-            borderWidth: 2,
-            borderColor: spotSet ? '#FFFFFF' : 'rgba(255,255,255,0.6)',
-            borderStyle: spotSet ? 'solid' : 'dashed',
-          }}
-        />
       </View>
     </View>
   );
@@ -358,7 +334,7 @@ function Timeline({
   onSeek: (t: number) => void;
 }) {
   const [w, setW] = useState(300);
-  const H = 64;
+  const H = 52;
   const n = Math.max(1, sc.hours.length - 1);
   const vals = [...observed, ...(forecast ?? [])].filter((v): v is number => v != null);
   const lo = Math.min(...vals, sc.baseline_ft);
@@ -412,7 +388,6 @@ function Timeline({
       </Svg>
       <View style={st.axisRow}>
         <Text style={st.axisText}>{localClock(sc, 0).time}</Text>
-        <Text style={st.axisText}>Your ground ‒ ‒</Text>
         <Text style={st.axisText}>{localClock(sc, n).time}</Text>
       </View>
     </View>
@@ -444,11 +419,13 @@ export function RiseScreen() {
   const [camIssue, setCamIssue] = useState<'denied' | 'error' | null>(null);
   const [tapHint, setTapHint] = useState('');
   const [spotSet, setSpotSet] = useState(false);
-  const [spotX, setSpotX] = useState(0);
+  const [flash, setFlash] = useState('');
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
-  const cameraOn = view === 'camera' && !!permission?.granted;
+  // Tabs stay mounted; release the camera and pause when another tab is showing
+  const focused = useIsFocused();
+  const cameraOn = view === 'camera' && !!permission?.granted && focused;
   const { pose, status: sensorStatus } = usePose(cameraOn, pitchOffset);
 
   // Remember calibration between visits (falls back to defaults if storage fails)
@@ -505,7 +482,7 @@ export function RiseScreen() {
   // Playback: whole event in ~20 s
   const speed = SPEEDS[speedIdx];
   const atEnd = t >= n;
-  const isPlaying = playing && !atEnd;
+  const isPlaying = playing && !atEnd && focused;
   useEffect(() => {
     if (!isPlaying) return;
     const id = setInterval(() => {
@@ -560,25 +537,22 @@ export function RiseScreen() {
     }
   }
 
-  function onTap(e: GestureResponderEvent) {
-    if (!measuring) return;
-    const { locationX, locationY } = e.nativeEvent;
-    const dx = locationX - layout.W / 2;
-    const dy = locationY - layout.H / 2;
-    const off = rotatedOffset(dx, dy, pose.roll);
-    const d = distanceFromTap(off, pose, focalPx(layout.W, layout.H, fovDeg), eyeM);
+  // Measure the spot under the centre crosshair: its depression angle and the
+  // phone's height give the distance (no finger in the way of the view).
+  function markSpot() {
+    const d = distanceFromTap(0, pose, focalPx(layout.W, layout.H, fovDeg), eyeM);
     if (!d) {
-      setTapHint('That point is at or above eye level. Tap lower, where the ground meets the object.');
-      AccessibilityInfo.announceForAccessibility('Tap lower, on the ground');
+      setTapHint('The + is at or above eye level. Tilt down until it sits where the ground meets the wall.');
+      AccessibilityInfo.announceForAccessibility('Tilt down so the crosshair is on the ground');
       return;
     }
     setTapHint('');
     setDistM(Math.round(d * 10) / 10);
-    setSpotX(dx * Math.cos(pose.roll) + dy * Math.sin(pose.roll));
     setSpotSet(true);
     setMeasuring(false);
+    setFlash(`Spot set ${Math.round(d * FT_PER_M)} ft away`);
     Haptics.selectionAsync().catch(() => {});
-    AccessibilityInfo.announceForAccessibility(`Spot set ${(d * FT_PER_M).toFixed(0)} feet away`);
+    AccessibilityInfo.announceForAccessibility(`Spot set ${Math.round(d * FT_PER_M)} feet away`);
   }
 
   function pickScenario(i: number) {
@@ -597,14 +571,21 @@ export function RiseScreen() {
     setFovDeg(DEFAULTS.fovDeg);
     setPitchOffset(0);
     setDistM(4);
-    setSpotX(0);
     setSpotSet(false);
   }
+
+  useEffect(() => {
+    if (!flash) return;
+    const id = setTimeout(() => setFlash(''), 2500);
+    return () => clearTimeout(id);
+  }, [flash]);
 
   // One bottom banner, most important message first
   let banner: { tone: 'info' | 'warn' | 'alert'; text: string } | null = null;
   if (cameraOn && measuring) {
-    banner = { tone: 'info', text: tapHint || 'Tap where the ground meets a wall, car or curb.' };
+    banner = { tone: 'info', text: tapHint || 'Aim the + where the ground meets a wall, car or curb, then tap Mark.' };
+  } else if (cameraOn && flash) {
+    banner = { tone: 'info', text: flash };
   } else if (cameraOn && sensorStatus === 'denied') {
     banner = { tone: 'warn', text: 'Motion access is off, so the water can’t stay level as you tilt. Allow Motion & Fitness in Settings.' };
   } else if (cameraOn && sensorStatus === 'unavailable') {
@@ -614,7 +595,7 @@ export function RiseScreen() {
   } else if (cameraOn && sensorStatus === 'ok' && pose.pitch > 0.6) {
     banner = { tone: 'info', text: 'Tilt the phone down toward the ground.' };
   } else if (cameraOn && !spotSet) {
-    banner = { tone: 'info', text: 'Point at a wall, car or curb 10 to 40 ft away, then tap Set spot.' };
+    banner = { tone: 'info', text: 'Tap Set spot to place the water on a wall, car or curb ahead of you.' };
   } else if (gaugeLost) {
     banner = { tone: 'alert', text: 'The river gauge stopped reporting here. The water kept rising.' };
   }
@@ -627,11 +608,7 @@ export function RiseScreen() {
         onLayout={e => setLayout({ W: e.nativeEvent.layout.width, H: e.nativeEvent.layout.height })}
       >
         {cameraOn ? (
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={onTap}
-            accessibilityLabel={measuring ? 'Tap where the ground meets a wall or object' : 'Camera view with simulated flood water'}
-          >
+          <View style={StyleSheet.absoluteFill} accessible={!measuring} accessibilityLabel="Camera view with simulated flood water">
             <CameraView
               style={StyleSheet.absoluteFill}
               facing="back"
@@ -641,37 +618,67 @@ export function RiseScreen() {
               }}
             />
             {layout.W > 1 && (
-              <WaterOverlay
-                W={layout.W}
-                H={layout.H}
-                pose={pose}
-                fovDeg={fovDeg}
-                eyeM={eyeM}
-                distM={distM}
-                spotX={spotX}
-                spotSet={spotSet}
-                depthM={depthM}
-                flow={flow}
-              />
+              <WaterOverlay W={layout.W} H={layout.H} pose={pose} fovDeg={fovDeg} eyeM={eyeM} distM={distM} depthM={depthM} flow={flow} />
             )}
-            {measuring && <View style={st.measureDim} pointerEvents="none" />}
-          </Pressable>
+            {measuring && (
+              <View style={st.reticle} pointerEvents="none">
+                <View style={st.reticleH} />
+                <View style={st.reticleV} />
+                <View style={st.reticleDot} />
+              </View>
+            )}
+          </View>
         ) : (
           <View style={st.diagramWrap} accessible accessibilityLabel={`Side view. Water is ${formatDepth(depth)} deep next to an adult and a car.`}>
             {layout.W > 1 && <DepthDiagram depth={depth} width={layout.W} height={layout.H} />}
           </View>
         )}
 
-        <View style={st.hud} pointerEvents="none">
-          <View style={[st.depthTag, statusTone === 'danger' && st.depthTagDanger, statusTone === 'warn' && st.depthTagWarn]}>
-            <Text style={st.depthValue} accessibilityLiveRegion="polite">{formatDepth(depth)}</Text>
-            <Text style={st.depthLabel}>{level ? level.label : 'Ground is still dry'}</Text>
-          </View>
-          <View style={st.clockTag}>
-            <Text style={st.clockTime}>{clock.time}</Text>
-            <Text style={st.clockDay}>{clock.day}</Text>
-          </View>
+        <View
+          style={[st.hudCard, statusTone === 'danger' && st.depthTagDanger, statusTone === 'warn' && st.depthTagWarn]}
+          pointerEvents="none"
+        >
+          <Text style={st.depthValue} accessibilityLiveRegion="polite">
+            {formatDepth(depth)}
+          </Text>
+          <Text style={st.depthLabel}>{level ? level.label : 'Ground is still dry'}</Text>
+          <Text style={st.hudClock}>
+            {clock.time} · {clock.day}
+          </Text>
         </View>
+
+        {cameraOn && (
+          <View style={st.floatCol}>
+            {measuring ? (
+              <>
+                <Pressable onPress={markSpot} accessibilityRole="button" accessibilityLabel="Mark the spot under the crosshair" style={[st.floatBtn, st.floatBtnPrimary]}>
+                  <Text style={[st.floatText, st.floatTextPrimary]}>Mark</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setMeasuring(false);
+                    setTapHint('');
+                  }}
+                  accessibilityRole="button"
+                  style={st.floatBtn}
+                >
+                  <Text style={st.floatText}>Cancel</Text>
+                </Pressable>
+              </>
+            ) : (
+              <Pressable
+                onPress={() => {
+                  setTapHint('');
+                  setMeasuring(true);
+                }}
+                accessibilityRole="button"
+                style={[st.floatBtn, !spotSet && st.floatBtnPrimary]}
+              >
+                <Text style={[st.floatText, !spotSet && st.floatTextPrimary]}>{spotSet ? 'Move spot' : 'Set spot'}</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
 
         {banner && (
           <View
@@ -688,7 +695,7 @@ export function RiseScreen() {
 
       {/* --------------------------------------------------- controls */}
       <ScrollView style={[st.panel, (showMore || pickerOpen) && st.panelOpen]} contentContainerStyle={st.panelContent}>
-        {/* row 1: event picker, speed, more */}
+        {/* row 1: event, view, more */}
         <View style={st.row}>
           <Pressable
             onPress={() => setPickerOpen(o => !o)}
@@ -698,19 +705,14 @@ export function RiseScreen() {
             style={[st.picker, pickerOpen && st.pickerOpen]}
           >
             <Text style={st.pickerTitle} numberOfLines={1}>
-              {sc.title}
+              {sc.title} {pickerOpen ? '▴' : '▾'}
             </Text>
             <Text style={st.pickerSub} numberOfLines={1}>
-              {sc.event} {pickerOpen ? '▴' : '▾'}
+              {sc.event}
             </Text>
           </Pressable>
-          <Pressable
-            onPress={() => setSpeedIdx(i => (i + 1) % SPEEDS.length)}
-            accessibilityRole="button"
-            accessibilityLabel={`Playback speed ${SPEEDS[speedIdx]} times. Tap to change.`}
-            style={st.iconBtn}
-          >
-            <Text style={st.iconBtnText}>{SPEEDS[speedIdx]}×</Text>
+          <Pressable onPress={toggleView} accessibilityRole="button" accessibilityLabel={view === 'camera' ? 'Switch to side view' : 'Switch to camera'} style={st.iconBtn}>
+            <Text style={st.iconBtnText}>{view === 'camera' ? 'Side' : 'Camera'}</Text>
           </Pressable>
           <Pressable
             onPress={() => setShowMore(m => !m)}
@@ -745,22 +747,8 @@ export function RiseScreen() {
           </View>
         )}
 
-        <Timeline
-          sc={sc}
-          observed={observed}
-          forecast={effectiveSource === 'forecast' ? forecastSeries : null}
-          t={t}
-          groundFt={groundFt}
-          marks={marks.filter(m => m.ft === 1 || m.ft === 5.7).map(m => ({ hour: m.hour, label: m.short }))}
-          depth={depth}
-          onSeek={v => {
-            setPlaying(false);
-            setT(v);
-          }}
-        />
-
-        {/* row 2: play + view */}
-        <View style={st.row}>
+        {/* row 2: play, timeline, speed */}
+        <View style={st.playRow}>
           <Pressable
             onPress={() => {
               if (atEnd) {
@@ -773,28 +761,33 @@ export function RiseScreen() {
             }}
             accessibilityRole="button"
             accessibilityLabel={isPlaying ? 'Pause timelapse' : atEnd ? 'Replay timelapse' : 'Play timelapse'}
-            style={st.play}
+            style={st.playRound}
           >
-            <Text style={st.playText}>{isPlaying ? 'Pause' : atEnd ? 'Replay' : 'Play'}</Text>
+            <Text style={st.playGlyph}>{isPlaying ? '❚❚' : atEnd ? '↺' : '▶'}</Text>
           </Pressable>
-          <Pressable onPress={toggleView} accessibilityRole="button" style={st.secondary}>
-            <Text style={st.secondaryText}>{view === 'camera' ? 'Side view' : 'Camera'}</Text>
-          </Pressable>
-          {cameraOn && (
-            <Pressable
-              onPress={() => {
-                setTapHint('');
-                setMeasuring(m => !m);
+          <View style={st.timelineWrap}>
+            <Timeline
+              sc={sc}
+              observed={observed}
+              forecast={effectiveSource === 'forecast' ? forecastSeries : null}
+              t={t}
+              groundFt={groundFt}
+              marks={marks.filter(m => m.ft === 1 || m.ft === 5.7).map(m => ({ hour: m.hour, label: m.short }))}
+              depth={depth}
+              onSeek={v => {
+                setPlaying(false);
+                setT(v);
               }}
-              accessibilityRole="button"
-              accessibilityState={{ selected: measuring }}
-              style={[st.secondary, (measuring || !spotSet) && st.secondaryActive]}
-            >
-              <Text style={[st.secondaryText, (measuring || !spotSet) && st.secondaryTextActive]}>
-                {measuring ? 'Cancel' : spotSet ? 'Move spot' : 'Set spot'}
-              </Text>
-            </Pressable>
-          )}
+            />
+          </View>
+          <Pressable
+            onPress={() => setSpeedIdx(i => (i + 1) % SPEEDS.length)}
+            accessibilityRole="button"
+            accessibilityLabel={`Playback speed ${SPEEDS[speedIdx]} times. Tap to change.`}
+            style={st.speedBtn}
+          >
+            <Text style={st.iconBtnText}>{SPEEDS[speedIdx]}×</Text>
+          </Pressable>
         </View>
         {camIssue && view !== 'camera' && (
           <View style={st.card}>
@@ -978,7 +971,7 @@ const st = StyleSheet.create({
   depthTag: { backgroundColor: K.white, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, maxWidth: '68%', borderWidth: 1, borderColor: K.border },
   depthTagWarn: { backgroundColor: K.amberLight, borderColor: '#FDE047' },
   depthTagDanger: { backgroundColor: K.redLight, borderColor: '#FCA5A5' },
-  depthValue: { fontSize: 26, fontWeight: '700', color: K.ink, letterSpacing: -0.5 },
+  depthValue: { fontSize: 22, fontWeight: '700', color: K.ink, letterSpacing: -0.5 },
   depthLabel: { fontSize: 13, color: K.ink2, marginTop: 2 },
   clockTag: { backgroundColor: K.white, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'flex-end', borderWidth: 1, borderColor: K.border },
   clockTime: { fontSize: 17, fontWeight: '700', color: K.ink },
@@ -994,11 +987,26 @@ const st = StyleSheet.create({
   measureText: { fontSize: 14, color: K.ink, textAlign: 'center', fontWeight: '600' },
   warnBanner: { position: 'absolute', bottom: 12, left: 12, right: 12, backgroundColor: K.amberLight, borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#FDE047' },
   warnText: { fontSize: 13, color: K.amber, textAlign: 'center', fontWeight: '600' },
-  gaugeLabel: { position: 'absolute', color: '#FFFFFF', fontSize: 13, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 3 },
-  gaugeNote: { position: 'absolute', width: 80, textAlign: 'right', color: '#FFFFFF', fontSize: 11, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 3 },
+  scaleLabel: { position: 'absolute', color: 'rgba(255,255,255,0.92)', fontSize: 11, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 2 },
+  hudCard: { position: 'absolute', top: 10, left: 10, maxWidth: '62%', backgroundColor: 'rgba(255,255,255,0.94)', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 11, borderWidth: 1, borderColor: K.border },
+  hudClock: { fontSize: 12, color: K.muted, marginTop: 3, fontVariant: ['tabular-nums'] },
+  floatCol: { position: 'absolute', top: 10, right: 10, gap: 8, alignItems: 'flex-end' },
+  floatBtn: { minHeight: 40, minWidth: 64, paddingHorizontal: 14, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.94)', alignItems: 'center', justifyContent: 'center' },
+  floatBtnPrimary: { backgroundColor: K.green },
+  floatText: { fontSize: 14, fontWeight: '700', color: K.ink },
+  floatTextPrimary: { color: K.white },
+  reticle: { position: 'absolute', left: '50%', top: '50%', width: 44, height: 44, marginLeft: -22, marginTop: -22, alignItems: 'center', justifyContent: 'center' },
+  reticleH: { position: 'absolute', width: 44, height: 2, backgroundColor: '#FFFFFF', borderRadius: 1 },
+  reticleV: { position: 'absolute', width: 2, height: 44, backgroundColor: '#FFFFFF', borderRadius: 1 },
+  reticleDot: { width: 8, height: 8, borderRadius: 4, borderWidth: 2, borderColor: K.green, backgroundColor: '#FFFFFF' },
+  playRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  playRound: { width: 48, height: 48, borderRadius: 24, backgroundColor: K.green, alignItems: 'center', justifyContent: 'center' },
+  playGlyph: { color: K.white, fontSize: 17, fontWeight: '700' },
+  timelineWrap: { flex: 1, minWidth: 0 },
+  speedBtn: { minWidth: 48, minHeight: 44, borderRadius: 8, borderWidth: 1, borderColor: K.borderStrong, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   lostBanner: { position: 'absolute', bottom: 12, left: 12, right: 12, backgroundColor: K.red, borderRadius: 8, padding: 10 },
   lostText: { fontSize: 14, color: K.white, textAlign: 'center', fontWeight: '600' },
-  panel: { flexGrow: 0, maxHeight: '42%', backgroundColor: K.white, borderTopWidth: 1, borderTopColor: K.border },
+  panel: { flexGrow: 0, maxHeight: '40%', backgroundColor: K.white, borderTopWidth: 1, borderTopColor: K.border },
   panelOpen: { maxHeight: '62%' },
   panelContent: { paddingHorizontal: 14, paddingTop: 10, gap: 10, paddingBottom: 14 },
   picker: { flex: 1, minHeight: 44, borderWidth: 1, borderColor: K.borderStrong, borderRadius: 8, paddingHorizontal: 12, justifyContent: 'center' },

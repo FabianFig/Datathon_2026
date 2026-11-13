@@ -22,6 +22,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { samplePairs } from '../data/samplePairs';
 import { RiseScreen } from './RiseScreen';
 import { ChangeCard, changeFor } from './ChangeCard';
@@ -197,7 +198,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!base) {
       setApiBase('');
       setError('');
-      router.replace('/explore');
+      router.navigate('/explore');
       return;
     }
     if (!/^https?:\/\//i.test(base)) {
@@ -206,7 +207,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     setApiBase(base);
     load(base);
-    router.replace('/explore');
+    router.navigate('/explore');
   }
 
   const currentPair = pairs[selected] || filtered[0] || samplePairs[0];
@@ -382,7 +383,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
   const displayedImage = phase === 'before' ? beforeImg : afterImg;
 
   const setTab = (target: Tab) => {
-    router.replace(
+    router.navigate(
       ({
         Rise: '/',
         Explore: '/explore',
@@ -393,7 +394,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
   };
 
   return (
-    <SafeAreaView style={s.app} edges={['top', 'bottom']}>
+    <SafeAreaView style={s.app} edges={['top']}>
       <StatusBar style="dark" />
 
       {/* Top Brand Bar */}
@@ -962,7 +963,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
                 onPress={() => {
                   setApiInput('');
                   setApiBase('');
-                  router.replace('/explore');
+                  router.navigate('/explore');
                 }}
                 style={[s.buttonSecondary, { marginTop: 10 }]}
               >
@@ -1002,27 +1003,37 @@ export function AppScreen({ tab }: { tab: Tab }) {
         </ScrollView>
       )}
 
-      {/* ---------------------------------------------------------------- */}
-      {/* Bottom Tab Bar (Accessible, Restrained ByteRight Aesthetic) */}
-      {/* ---------------------------------------------------------------- */}
-      <View style={s.nav} accessibilityRole="tablist">
-        {(['Rise', 'Explore', 'Compare', 'Settings'] as Tab[]).map(item => {
-          const isActive = tab === item;
-          return (
-            <Pressable
-              key={item}
-              accessibilityRole="tab"
-              accessibilityLabel={item}
-              accessibilityState={{ selected: isActive }}
-              onPress={() => setTab(item)}
-              style={[s.navItem, isActive && s.navItemActive]}
-            >
-              <Text style={[s.navText, isActive && s.navTextActive]}>{item}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
     </SafeAreaView>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Bottom tab bar, rendered once by the Tabs layout so it never re-animates
+// -------------------------------------------------------------------------
+const TAB_LABELS: Record<string, string> = { index: 'Rise', explore: 'Explore', compare: 'Compare', settings: 'Settings' };
+
+export function AppTabBar({ state, navigateToTab, insets }: BottomTabBarProps) {
+  return (
+    <View style={[s.nav, { paddingBottom: Math.max(insets.bottom, 6) }]} accessibilityRole="tablist">
+      {state.routes.map((route, i) => {
+        const isActive = state.index === i;
+        const label = TAB_LABELS[route.name] ?? route.name;
+        return (
+          <Pressable
+            key={route.key}
+            accessibilityRole="tab"
+            accessibilityLabel={label}
+            accessibilityState={{ selected: isActive }}
+            onPress={() => {
+              if (!isActive) navigateToTab(route.key);
+            }}
+            style={[s.navItem, isActive && s.navItemActive]}
+          >
+            <Text style={[s.navText, isActive && s.navTextActive]}>{label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
