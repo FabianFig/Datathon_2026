@@ -1,4 +1,3 @@
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -12,7 +11,6 @@ import {
 } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Dimensions,
   Image,
   PanResponder,
@@ -73,7 +71,7 @@ export type Pair = {
   review?: HumanReview | null;
 };
 
-type Tab = 'Rise' | 'Explore' | 'Compare' | 'Camera' | 'Settings';
+type Tab = 'Rise' | 'Explore' | 'Compare' | 'Settings';
 type Phase = 'before' | 'after';
 type CompareMode = 'split' | 'toggle' | 'sideBySide';
 
@@ -123,12 +121,6 @@ type AppData = {
   setFilterMode: (value: 'all' | 'high_priority' | 'reviewed') => void;
   loading: boolean;
   error: string;
-  permission: ReturnType<typeof useCameraPermissions>[0];
-  cameraActive: boolean;
-  opacity: number;
-  setOpacity: (value: number | ((previous: number) => number)) => void;
-  stopCamera: () => void;
-  toggleCamera: () => Promise<void>;
   filtered: Pair[];
   connect: () => void;
   submitReview: (agreement: string, notes?: string) => Promise<void>;
@@ -154,9 +146,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [filterMode, setFilterMode] = useState<'all' | 'high_priority' | 'reviewed'>('all');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [permission, requestPermission] = useCameraPermissions();
-  const [cameraActive, setCameraActive] = useState(false);
-  const [opacity, setOpacity] = useState(65);
 
   const load = useCallback(async (base: string) => {
     if (!base) {
@@ -220,19 +209,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     router.replace('/explore');
   }
 
-  async function toggleCamera() {
-    if (cameraActive) {
-      setCameraActive(false);
-      return;
-    }
-    const result = permission?.granted ? permission : await requestPermission();
-    if (result?.granted) {
-      setCameraActive(true);
-    } else {
-      Alert.alert('Camera Permission Required', 'Allow camera access to view the live overlay.');
-    }
-  }
-
   const currentPair = pairs[selected] || filtered[0] || samplePairs[0];
 
   const submitReview = useCallback(async (agreement: string, notes: string = '') => {
@@ -289,14 +265,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setFilterMode,
         loading,
         error,
-        permission,
-        cameraActive,
-        opacity,
-        setOpacity,
         filtered,
         connect,
-        toggleCamera,
-        stopCamera: () => setCameraActive(false),
         submitReview,
         currentPair: currentPair as Pair,
       }}
@@ -400,14 +370,8 @@ export function AppScreen({ tab }: { tab: Tab }) {
     setFilterMode,
     loading,
     error,
-    permission,
-    cameraActive,
-    opacity,
-    setOpacity,
     filtered,
     connect,
-    toggleCamera,
-    stopCamera,
     submitReview,
     currentPair,
   } = useAppData();
@@ -418,13 +382,11 @@ export function AppScreen({ tab }: { tab: Tab }) {
   const displayedImage = phase === 'before' ? beforeImg : afterImg;
 
   const setTab = (target: Tab) => {
-    if (target !== 'Camera') stopCamera();
     router.replace(
       ({
         Rise: '/',
         Explore: '/explore',
         Compare: '/compare',
-        Camera: '/camera',
         Settings: '/settings',
       } as const)[target]
     );
@@ -768,22 +730,6 @@ export function AppScreen({ tab }: { tab: Tab }) {
 
           <ChangeCard afterId={pair.after_id} afterUrl={afterImg} />
 
-          {/* Quick Camera Navigation CTA */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open illustrative camera overlay for this location"
-            onPress={() => setTab('Camera')}
-            style={s.cameraBannerBtn}
-          >
-            <View style={s.cameraBannerContent}>
-              <Text style={s.cameraBannerTitle}>Try Phone Camera Overlay</Text>
-              <Text style={s.cameraBannerSub}>
-                Project this aerial survey over your live phone camera for orientation.
-              </Text>
-            </View>
-            <Text style={s.cameraBannerArrow}>→</Text>
-          </Pressable>
-
           {/* ------------------------------------------------------------ */}
           {/* EVIDENCE SECTION: Visual Cue vs Vision VLM Dossier */}
           {/* ------------------------------------------------------------ */}
@@ -969,142 +915,6 @@ export function AppScreen({ tab }: { tab: Tab }) {
       )}
 
       {/* ---------------------------------------------------------------- */}
-      {/* CAMERA TAB (Illustrative Live Viewfinder) */}
-      {/* ---------------------------------------------------------------- */}
-      {tab === 'Camera' && (
-        <ScrollView style={s.screen} contentContainerStyle={s.content}>
-          <View style={s.headerBlock}>
-            <Text style={s.eyebrow}>FIELD ALIGNMENT DEMO</Text>
-            <Text style={s.heading} accessibilityRole="header">
-              Camera Overlay
-            </Text>
-            <Text style={s.subheading}>
-              Inspect the historical survey against your physical surroundings.
-            </Text>
-          </View>
-
-          {/* Prominent Architectural Disclaimer */}
-          <View style={s.perspectiveNotice}>
-            <View style={s.noticeHeaderRow}>
-              <Text style={s.noticeIcon}>ℹ</Text>
-              <Text style={s.perspectiveNoticeTitle}>
-                Perspective & Alignment Limitation
-              </Text>
-            </View>
-            <Text style={s.perspectiveNoticeBody}>
-              This is an illustrative 2D nadir (top-down) overlay, not geographically anchored AR. It does NOT calibrate ground elevation, water line height, or safe passage.
-            </Text>
-          </View>
-
-          {/* Camera Viewfinder Box */}
-          <View style={s.viewfinderFrame}>
-            {cameraActive && permission?.granted ? (
-              <CameraView style={StyleSheet.absoluteFill} facing="back" />
-            ) : (
-              <View style={s.viewfinderOff}>
-                <Text style={s.viewfinderOffTitle}>Camera Inactive</Text>
-                <Text style={s.viewfinderOffSub}>
-                  Tap below to start the camera and test the historical overlay.
-                </Text>
-              </View>
-            )}
-
-            {/* Historical Overlay Image */}
-            {cameraActive && pair && (
-              <View style={[StyleSheet.absoluteFill, { opacity: opacity / 100 }]} pointerEvents="none">
-                <Image source={{ uri: displayedImage }} style={StyleSheet.absoluteFill} resizeMode="contain" />
-              </View>
-            )}
-
-            {/* Viewfinder Reticle & Level Guides */}
-            <View style={s.reticleOverlay} pointerEvents="none">
-              <View style={s.reticleCenter} />
-              <View style={s.reticleCrossH} />
-              <View style={s.reticleCrossV} />
-              <View style={s.viewfinderWatermark}>
-                <Text style={s.viewfinderWatermarkText}>
-                  {phase === 'before' ? `HISTORICAL PRE: ${pair.before_date}` : `HISTORICAL POST: ${pair.after_date}`}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Camera Controls */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={cameraActive ? 'Stop live camera' : 'Start live camera'}
-            onPress={toggleCamera}
-            style={[s.buttonPrimary, { backgroundColor: cameraActive ? '#374151' : C.green }]}
-          >
-            <Text style={s.buttonPrimaryText}>
-              {cameraActive ? 'Stop Camera View' : 'Start Camera View'}
-            </Text>
-          </Pressable>
-
-          {/* Overlay Controls */}
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Overlay Controls</Text>
-
-            {/* Before / After toggle in camera */}
-            <View style={s.toggleControlsRow}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Project pre-flood aerial view"
-                accessibilityState={{ selected: phase === 'before' }}
-                onPress={() => setPhase('before')}
-                style={[s.phaseBtn, phase === 'before' && s.phaseBtnActive]}
-              >
-                <Text style={[s.phaseBtnText, phase === 'before' && s.phaseBtnTextActive]}>
-                  Pre-Flood View
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Project post-flood aerial view"
-                accessibilityState={{ selected: phase === 'after' }}
-                onPress={() => setPhase('after')}
-                style={[s.phaseBtn, phase === 'after' && s.phaseBtnActive]}
-              >
-                <Text style={[s.phaseBtnText, phase === 'after' && s.phaseBtnTextActive]}>
-                  Post-Flood View
-                </Text>
-              </Pressable>
-            </View>
-
-            {/* Opacity Preset Buttons */}
-            <View style={s.opacitySection}>
-              <Text style={s.opacityLabel}>Overlay Blend: {opacity}%</Text>
-              <View style={s.opacityPresetRow}>
-                {[25, 50, 70, 90].map(val => (
-                  <Pressable
-                    key={val}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Set opacity to ${val}%`}
-                    onPress={() => setOpacity(val)}
-                    style={[s.opacityChip, opacity === val && s.opacityChipActive]}
-                  >
-                    <Text style={[s.opacityChipText, opacity === val && s.opacityChipTextActive]}>
-                      {val}%
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          </View>
-
-          {/* Technical Deep Dive Accordion / Card */}
-          <View style={s.technicalCard}>
-            <Text style={s.technicalTitle}>Technical Note: Expo Go vs Native 6-DoF AR</Text>
-            <Text style={s.technicalBody}>
-              True spatial flood projection requires 6-DoF visual-inertial odometry (ARKit / ARCore), LiDAR surface meshing, and centimeter-accurate RTK GPS to warp 2D top-down orthoimagery into ground-level perspective.
-              {'\n\n'}
-              Standard Expo Go intentionally excludes custom native AR extension frameworks. This implementation provides the highest-fidelity, accessible cross-platform viewfinder overlay achievable within stock Expo Go.
-            </Text>
-          </View>
-        </ScrollView>
-      )}
-
-      {/* ---------------------------------------------------------------- */}
       {/* SETTINGS TAB */}
       {/* ---------------------------------------------------------------- */}
       {tab === 'Settings' && (
@@ -1186,7 +996,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
           <View style={s.noticeCard}>
             <Text style={s.noticeTitle}>Ethical & Safety Notice</Text>
             <Text style={s.noticeBody}>
-              The UTSA metadata contains unverified flood labels. Automated model outputs and camera overlays are designed as research aids for human image analysts. Never treat historical imagery or model cues as real-time flood warnings, depth measurements, or evacuation guidance.
+              The UTSA metadata contains unverified flood labels. Automated model outputs and the flood simulation are designed as research aids for human image analysts. Never treat historical imagery or model cues as real-time flood warnings, depth measurements, or evacuation guidance.
             </Text>
           </View>
         </ScrollView>
@@ -1196,7 +1006,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
       {/* Bottom Tab Bar (Accessible, Restrained ByteRight Aesthetic) */}
       {/* ---------------------------------------------------------------- */}
       <View style={s.nav} accessibilityRole="tablist">
-        {(['Rise', 'Explore', 'Compare', 'Camera', 'Settings'] as Tab[]).map(item => {
+        {(['Rise', 'Explore', 'Compare', 'Settings'] as Tab[]).map(item => {
           const isActive = tab === item;
           return (
             <Pressable
@@ -1514,20 +1324,6 @@ const s = StyleSheet.create({
   sideImage: { width: '100%', height: 210, backgroundColor: C.dark },
 
   // Camera Banner CTA
-  cameraBannerBtn: {
-    borderWidth: 1,
-    borderColor: C.borderStrong,
-    borderRadius: 10,
-    backgroundColor: C.white,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  cameraBannerContent: { flex: 1, gap: 2 },
-  cameraBannerTitle: { fontSize: 15, fontWeight: '700', color: C.ink },
-  cameraBannerSub: { fontSize: 12, color: C.muted },
-  cameraBannerArrow: { fontSize: 20, fontWeight: '700', color: C.green, paddingLeft: 10 },
 
   // Evidence Cards
   evidenceContainer: { gap: 14, marginTop: 4 },
@@ -1622,88 +1418,7 @@ const s = StyleSheet.create({
   reviewBtnTextActive: { color: C.white, fontWeight: '700' },
 
   // Camera Tab
-  perspectiveNotice: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 8,
-    padding: 12,
-    gap: 4,
-  },
-  noticeHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  noticeIcon: { fontSize: 14, color: '#1D4ED8', fontWeight: '700' },
-  perspectiveNoticeTitle: { fontSize: 13, fontWeight: '700', color: '#1D4ED8' },
-  perspectiveNoticeBody: { fontSize: 12, lineHeight: 17, color: '#1E3A8A' },
-  viewfinderFrame: {
-    height: 360,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: C.dark,
-    position: 'relative',
-  },
-  viewfinderOff: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, padding: 20 },
-  viewfinderOffTitle: { color: C.white, fontSize: 18, fontWeight: '700' },
-  viewfinderOffSub: { color: '#9CA3AF', fontSize: 13, textAlign: 'center' },
-  reticleOverlay: {
-    ...StyleSheet.absoluteFill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reticleCenter: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.7)',
-  },
-  reticleCrossH: {
-    position: 'absolute',
-    width: 60,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-  },
-  reticleCrossV: {
-    position: 'absolute',
-    height: 60,
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-  },
-  viewfinderWatermark: {
-    position: 'absolute',
-    bottom: 12,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  viewfinderWatermarkText: { color: C.white, fontSize: 11, fontWeight: '700' },
-  opacitySection: { gap: 6 },
-  opacityLabel: { fontSize: 13, fontWeight: '600', color: C.ink },
-  opacityPresetRow: { flexDirection: 'row', gap: 8 },
-  opacityChip: {
-    flex: 1,
-    minHeight: 36,
-    borderWidth: 1,
-    borderColor: C.borderStrong,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.bg,
-  },
-  opacityChipActive: { backgroundColor: C.green, borderColor: C.green },
-  opacityChipText: { fontSize: 12, fontWeight: '600', color: C.muted },
-  opacityChipTextActive: { color: C.white, fontWeight: '700' },
 
-  technicalCard: {
-    backgroundColor: C.white,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 10,
-    padding: 14,
-    gap: 6,
-  },
-  technicalTitle: { fontSize: 13, fontWeight: '700', color: C.ink },
-  technicalBody: { fontSize: 12, lineHeight: 18, color: C.muted },
 
   // Settings
   fieldLabel: { fontSize: 13, fontWeight: '700', color: C.ink },

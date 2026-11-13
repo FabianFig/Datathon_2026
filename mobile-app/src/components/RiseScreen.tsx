@@ -4,8 +4,9 @@ import { DeviceMotion } from 'expo-sensors';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
+  AppState,
+  Linking,
   Image,
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,7 +15,7 @@ import {
   type GestureResponderEvent,
   type LayoutChangeEvent,
 } from 'react-native';
-import Svg, { Line, Path, Rect, Circle } from 'react-native-svg';
+import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import {
   distanceFromTap,
   focalPx,
@@ -64,8 +65,11 @@ type Source = 'observed' | 'forecast';
 const LEADS = [1, 3, 6];
 
 // --------------------------------------------------------------------------- sensors
-function usePose(enabled: boolean, pitchOffset: number): Pose {
+type SensorStatus = 'off' | 'starting' | 'ok' | 'unavailable' | 'denied';
+
+function usePose(enabled: boolean, pitchOffset: number): { pose: Pose; status: SensorStatus } {
   const [pose, setPose] = useState<Pose>({ pitch: 0, roll: 0 });
+  const [status, setStatus] = useState<SensorStatus>('off');
   const up = useRef<Vec3 | null>(null);
   const sign = useRef<number>(1);
   const signLocked = useRef(false);
@@ -74,15 +78,30 @@ function usePose(enabled: boolean, pitchOffset: number): Pose {
     if (!enabled) return;
     let sub: { remove: () => void } | null = null;
     let cancelled = false;
+    let last: Pose | null = null;
     (async () => {
-      if (!(await DeviceMotion.isAvailableAsync())) return;
-      const perm = await DeviceMotion.getPermissionsAsync();
-      if (!perm.granted) await DeviceMotion.requestPermissionsAsync();
-      if (cancelled) return;
+      setStatus('starting');
+      try {
+        if (!(await DeviceMotion.isAvailableAsync())) {
+          if (!cancelled) setStatus('unavailable');
+          return;
+        }
+        let perm = await DeviceMotion.getPermissionsAsync();
+        if (!perm.granted && perm.canAskAgain) perm = await DeviceMotion.requestPermissionsAsync();
+        if (cancelled) return;
+        if (!perm.granted) {
+          setStatus('denied');
+          return;
+        }
+      } catch {
+        if (!cancelled) setStatus('unavailable');
+        return;
+      }
       DeviceMotion.setUpdateInterval(33);
+      setStatus('ok');
       sub = DeviceMotion.addListener(m => {
         const g = m.accelerationIncludingGravity;
-        if (!g) return;
+        if (!g || !Number.isFinite(g.x) || !Number.isFinite(g.y) || !Number.isFinite(g.z)) return;
         // Platforms disagree on whether this reports gravity or its reaction.
         // People hold the phone upright in portrait, so lock the sign from the
         // first clearly-upright reading and treat the result as world-up.
@@ -96,16 +115,21 @@ function usePose(enabled: boolean, pitchOffset: number): Pose {
         const prev = up.current ?? raw;
         const next = { x: prev.x + a * (raw.x - prev.x), y: prev.y + a * (raw.y - prev.y), z: prev.z + a * (raw.z - prev.z) };
         up.current = next;
-        setPose(poseFromUp(next, pitchOffset));
+        const p = poseFromUp(next, pitchOffset);
+        // Skip re-renders for sub-0.1 degree jitter
+        if (last && Math.abs(p.pitch - last.pitch) < 0.002 && Math.abs(p.roll - last.roll) < 0.002) return;
+        last = p;
+        setPose(p);
       });
     })();
     return () => {
       cancelled = true;
       sub?.remove();
+      setStatus('off');
     };
   }, [enabled, pitchOffset]);
 
-  return pose;
+  return { pose, status };
 }
 
 // --------------------------------------------------------------------------- AR overlay
@@ -178,32 +202,82 @@ function WaterOverlay({
 }
 
 // --------------------------------------------------------------------------- diagram (no camera)
-function DepthDiagram({ depth, height }: { depth: number; height: number }) {
-  const maxFt = 8;
-  const W = 320;
-  const ground = height - 18;
-  const pxPerFt = (ground - 10) / maxFt;
-  const y = (ft: number) => ground - Math.min(maxFt, ft) * pxPerFt;
-  const personH = 5.7;
+/**
+ * Side view drawn in real feet with one uniform scale, so the adult (5 ft 8 in)
+ * and the sedan (14.5 ft long, 4.7 ft tall) keep true proportions on any screen.
+ */
+const PERSON_FT = 5.7;
+const CAR = { x: 4.6, len: 14.5, body: 2.9, roof: 4.7, wheel: 1.05 };
+
+function DepthDiagram({ depth, width, height }: { depth: number; width: number; height: number }) {
+  const below = 0.7; // ground strip under the surface line
+  // Keep the adult and the car's cabin in frame; the car may run off the right
+  // edge on narrow screens so the scene stays zoomed in.
+  const minW = 12;
+  let vbH = Math.min(16, Math.max(8, depth + 1.5)) + below;
+  let vbW = (vbH * width) / height;
+  if (vbW < minW) {
+    vbW = minW;
+    vbH = (vbW * height) / width;
+  }
+  const Y = (ft: number) => vbH - below - ft;
+  const px = 2.0; // person centre x
+  // Cars start to float around 2 ft of water; show it lifting and tilting.
+  const lift = Math.max(0, depth - 1.8);
+  const tilt = lift > 0 ? Math.min(6, 2 + lift) : 0;
+  const cx = CAR.x + CAR.len / 2;
+  const carPath = [
+    `M${CAR.x} ${Y(0.9)}`,
+    `L${CAR.x} ${Y(2.5)}`,
+    `Q${CAR.x} ${Y(CAR.body)} ${CAR.x + 0.6} ${Y(CAR.body)}`,
+    `L${CAR.x + 3.4} ${Y(CAR.body)}`,
+    `L${CAR.x + 5.2} ${Y(CAR.roof)}`,
+    `L${CAR.x + 10} ${Y(CAR.roof)}`,
+    `L${CAR.x + 11.6} ${Y(CAR.body)}`,
+    `L${CAR.x + CAR.len - 0.5} ${Y(CAR.body - 0.2)}`,
+    `Q${CAR.x + CAR.len} ${Y(CAR.body - 0.2)} ${CAR.x + CAR.len} ${Y(2.2)}`,
+    `L${CAR.x + CAR.len} ${Y(0.9)}`,
+    'Z',
+  ].join(' ');
+  const ticks = [];
+  for (let ft = 1; ft < vbH - below - 0.3; ft++) ticks.push(ft);
+
   return (
-    <Svg width="100%" height={height} viewBox={`0 0 ${W} ${height}`} accessible={false}>
-      <Rect x={0} y={0} width={W} height={height} fill="#EEF2EE" />
-      {/* person */}
-      <Circle cx={92} cy={y(personH) + 9} r={9} fill="#2D3A33" />
-      <Rect x={84} y={y(personH) + 20} width={16} height={(personH - 2.9) * pxPerFt - 14} rx={4} fill="#2D3A33" />
-      <Rect x={85} y={y(2.9)} width={6} height={2.9 * pxPerFt} fill="#2D3A33" />
-      <Rect x={93} y={y(2.9)} width={6} height={2.9 * pxPerFt} fill="#2D3A33" />
-      {/* car */}
-      <Path d={`M170 ${y(1.5)} L190 ${y(2.6)} L250 ${y(2.6)} L268 ${y(1.5)} L286 ${y(1.5)} L286 ${y(0.6)} L160 ${y(0.6)} L160 ${y(1.5)} Z`} fill="#4A5852" />
-      <Circle cx={185} cy={y(0.45)} r={0.45 * pxPerFt} fill="#2D3A33" />
-      <Circle cx={262} cy={y(0.45)} r={0.45 * pxPerFt} fill="#2D3A33" />
+    <Svg width={width} height={height} viewBox={`0 0 ${vbW} ${vbH}`} accessible={false}>
+      <Rect x={0} y={0} width={vbW} height={vbH} fill="#EEF2EE" />
+      {/* adult, 5 ft 8 in */}
+      <Circle cx={px} cy={Y(PERSON_FT - 0.42)} r={0.42} fill="#2D3A33" />
+      <Rect x={px - 0.62} y={Y(4.85)} width={1.24} height={2.0} rx={0.3} fill="#2D3A33" />
+      <Rect x={px - 0.95} y={Y(4.7)} width={0.3} height={1.9} rx={0.15} fill="#2D3A33" />
+      <Rect x={px + 0.65} y={Y(4.7)} width={0.3} height={1.9} rx={0.15} fill="#2D3A33" />
+      <Rect x={px - 0.55} y={Y(2.95)} width={0.48} height={2.95} rx={0.15} fill="#2D3A33" />
+      <Rect x={px + 0.07} y={Y(2.95)} width={0.48} height={2.95} rx={0.15} fill="#2D3A33" />
+      {/* sedan */}
+      <G transform={`translate(0 ${-lift}) rotate(${tilt} ${cx} ${Y(1.5)})`}>
+        <Path d={carPath} fill="#4A5852" />
+        <Path
+          d={`M${CAR.x + 3.9} ${Y(CAR.body + 0.1)} L${CAR.x + 5.4} ${Y(CAR.roof - 0.3)} L${CAR.x + 9.8} ${Y(CAR.roof - 0.3)} L${CAR.x + 11.1} ${Y(CAR.body + 0.1)} Z`}
+          fill="#C9D3CD"
+        />
+        <Circle cx={CAR.x + 2.8} cy={Y(CAR.wheel)} r={CAR.wheel} fill="#1F2924" />
+        <Circle cx={CAR.x + CAR.len - 2.8} cy={Y(CAR.wheel)} r={CAR.wheel} fill="#1F2924" />
+      </G>
       {/* water */}
-      {depth > 0 && <Rect x={0} y={y(depth)} width={W} height={ground - y(depth)} fill={K.water} />}
-      {depth > 0 && <Line x1={0} x2={W} y1={y(depth)} y2={y(depth)} stroke={K.surface} strokeWidth={2} />}
-      <Line x1={0} x2={W} y1={ground} y2={ground} stroke="#2D3A33" strokeWidth={2} />
-      {/* scale */}
-      {[1, 2, 3, 4, 5, 6, 7].map(ft => (
-        <Line key={ft} x1={W - 14} x2={W - 4} y1={y(ft)} y2={y(ft)} stroke="#2D3A33" strokeWidth={1} />
+      {depth > 0 && <Rect x={0} y={Y(depth)} width={vbW} height={depth} fill={K.water} />}
+      {depth > 0 && <Line x1={0} x2={vbW} y1={Y(depth)} y2={Y(depth)} stroke={K.surface} strokeWidth={0.08} />}
+      {/* ground */}
+      <Rect x={0} y={Y(0)} width={vbW} height={below} fill="#C8D2CB" />
+      <Line x1={0} x2={vbW} y1={Y(0)} y2={Y(0)} stroke="#2D3A33" strokeWidth={0.08} />
+      {/* scale in feet */}
+      {ticks.map(ft => (
+        <G key={ft}>
+          <Line x1={vbW - 0.45} x2={vbW - 0.1} y1={Y(ft)} y2={Y(ft)} stroke="#2D3A33" strokeWidth={0.05} />
+          {ft % 2 === 0 && (
+            <SvgText x={vbW - 0.6} y={Y(ft) + 0.17} fontSize={0.5} fill="#2D3A33" textAnchor="end">
+              {`${ft} ft`}
+            </SvgText>
+          )}
+        </G>
       ))}
     </Svg>
   );
@@ -217,6 +291,7 @@ function Timeline({
   t,
   groundFt,
   marks,
+  depth,
   onSeek,
 }: {
   sc: Scenario;
@@ -225,11 +300,12 @@ function Timeline({
   t: number;
   groundFt: number;
   marks: { hour: number; label: string }[];
+  depth: number;
   onSeek: (t: number) => void;
 }) {
   const [w, setW] = useState(300);
   const H = 92;
-  const n = sc.hours.length - 1;
+  const n = Math.max(1, sc.hours.length - 1);
   const vals = [...observed, ...(forecast ?? [])].filter((v): v is number => v != null);
   const lo = Math.min(...vals, sc.baseline_ft);
   const hi = Math.max(...vals, sc.baseline_ft + groundFt + 6);
@@ -249,20 +325,10 @@ function Timeline({
     return d;
   };
   const groundY = y(sc.baseline_ft + groundFt);
-  const seek = (e: GestureResponderEvent) => onSeek(Math.max(0, Math.min(n, (e.nativeEvent.locationX / w) * n)));
-  const pan = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: seek,
-        onPanResponderMove: seek,
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [w, n]
-  );
+  const seek = (e: GestureResponderEvent) => {
+    if (w > 0) onSeek(Math.max(0, Math.min(n, (e.nativeEvent.locationX / w) * n)));
+  };
   const clock = localClock(sc, t);
-  const depth = depthFt(stageAt(observed, t), sc, groundFt);
 
   return (
     <View
@@ -273,9 +339,13 @@ function Timeline({
       accessibilityValue={{ text: `${clock.day} ${clock.time}. Water ${formatDepth(depth)}.` }}
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
       onAccessibilityAction={e => onSeek(Math.max(0, Math.min(n, t + (e.nativeEvent.actionName === 'increment' ? 1 : -1))))}
-      {...pan.panHandlers}
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderTerminationRequest={() => false}
+      onResponderGrant={seek}
+      onResponderMove={seek}
     >
-      <Svg width={w} height={H}>
+      <Svg width={w} height={H} pointerEvents="none">
         <Rect x={0} y={groundY} width={w} height={H - groundY} fill="#EEF2EE" />
         <Line x1={0} x2={w} y1={groundY} y2={groundY} stroke={K.borderStrong} strokeDasharray="4 4" />
         {marks.map(m => (
@@ -314,14 +384,18 @@ export function RiseScreen() {
   const [showCal, setShowCal] = useState(false);
   const [layout, setLayout] = useState({ W: 1, H: 1 });
   const [flow, setFlow] = useState(0);
+  const [camDenied, setCamDenied] = useState(false);
+  const [tapHint, setTapHint] = useState('');
   const [permission, requestPermission] = useCameraPermissions();
   const cameraOn = view === 'camera' && !!permission?.granted;
-  const pose = usePose(cameraOn, pitchOffset);
+  const { pose, status: sensorStatus } = usePose(cameraOn, pitchOffset);
 
   const hasForecast = model.trained && !!sc.forecast;
   const observed = sc.stage_ft;
-  const forecastSeries = hasForecast ? series(sc, 'forecast', lead) : null;
-  const driving = source === 'forecast' && forecastSeries ? forecastSeries : observed;
+  const forecastSeries = useMemo(() => (hasForecast ? series(sc, 'forecast', lead) : null), [hasForecast, sc, lead]);
+  const effectiveSource: Source = hasForecast ? source : 'observed';
+  const driving = effectiveSource === 'forecast' && forecastSeries ? forecastSeries : observed;
+  const peakHere = depthFt(sc.peak_ft, sc, groundFt);
   const depth = depthFt(stageAt(driving, t), sc, groundFt);
   const depthM = depth / FT_PER_M;
   const clock = localClock(sc, t);
@@ -346,28 +420,31 @@ export function RiseScreen() {
   const fcCars = forecastSeries ? crossing(forecastSeries, sc, groundFt, 1) : null;
 
   // Playback: whole event in ~20 s
+  const atEnd = t >= n;
+  const isPlaying = playing && !atEnd;
   useEffect(() => {
-    if (!playing) return;
+    if (!isPlaying) return;
     const id = setInterval(() => {
-      setT(prev => {
-        const next = prev + n / 400;
-        if (next >= n) {
-          setPlaying(false);
-          return n;
-        }
-        return next;
-      });
+      setT(prev => Math.min(n, prev + n / 400));
       setFlow(v => (v + 0.08) % 6);
     }, 50);
     return () => clearInterval(id);
-  }, [playing, n]);
+  }, [isPlaying, n]);
+
+  // Pause when the app goes to the background
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state !== 'active') setPlaying(false);
+    });
+    return () => sub.remove();
+  }, []);
 
   // Slow ripple drift when paused, so the surface reads as water
   useEffect(() => {
-    if (playing || !cameraOn) return;
+    if (isPlaying || !cameraOn) return;
     const id = setInterval(() => setFlow(v => (v + 0.03) % 6), 60);
     return () => clearInterval(id);
-  }, [playing, cameraOn]);
+  }, [isPlaying, cameraOn]);
 
   // Haptic + screen reader announcement when a depth threshold is crossed
   const lastLevel = useRef(-1);
@@ -380,13 +457,23 @@ export function RiseScreen() {
     lastLevel.current = idx;
   }, [level, depth]);
 
-  async function useCamera() {
+  async function toggleView() {
     if (view === 'camera') {
       setView('diagram');
+      setMeasuring(false);
       return;
     }
-    const p = permission?.granted ? permission : await requestPermission();
-    if (p?.granted) setView('camera');
+    try {
+      const p = permission?.granted ? permission : await requestPermission();
+      if (p?.granted) {
+        setCamDenied(false);
+        setView('camera');
+      } else {
+        setCamDenied(true);
+      }
+    } catch {
+      setCamDenied(true);
+    }
   }
 
   function onTap(e: GestureResponderEvent) {
@@ -394,18 +481,23 @@ export function RiseScreen() {
     const { locationX, locationY } = e.nativeEvent;
     const off = rotatedOffset(locationX - layout.W / 2, locationY - layout.H / 2, pose.roll);
     const d = distanceFromTap(off, pose, focalPx(layout.W, layout.H, fovDeg), eyeM);
-    if (d) {
-      setDistM(Math.round(d * 10) / 10);
-      setMeasuring(false);
-      Haptics.selectionAsync().catch(() => {});
-      AccessibilityInfo.announceForAccessibility(`Reference set ${(d * FT_PER_M).toFixed(0)} feet away`);
+    if (!d) {
+      setTapHint('That point is at or above eye level. Tap lower, where the ground meets the object.');
+      AccessibilityInfo.announceForAccessibility('Tap lower, on the ground');
+      return;
     }
+    setTapHint('');
+    setDistM(Math.round(d * 10) / 10);
+    setMeasuring(false);
+    Haptics.selectionAsync().catch(() => {});
+    AccessibilityInfo.announceForAccessibility(`Spot set ${(d * FT_PER_M).toFixed(0)} feet away`);
   }
 
   function pickScenario(i: number) {
     setScIdx(i);
     setT(0);
     setPlaying(false);
+    if (!(model.trained && scenarios[i].forecast)) setSource('observed');
     lastLevel.current = -1;
   }
 
@@ -425,11 +517,11 @@ export function RiseScreen() {
             accessibilityLabel={measuring ? 'Tap where the ground meets a wall or object' : 'Camera view with simulated flood water'}
           >
             <CameraView style={StyleSheet.absoluteFill} facing="back" />
-            <WaterOverlay W={layout.W} H={layout.H} pose={pose} fovDeg={fovDeg} eyeM={eyeM} distM={distM} depthM={depthM} flow={flow} />
+            {layout.W > 1 && <WaterOverlay W={layout.W} H={layout.H} pose={pose} fovDeg={fovDeg} eyeM={eyeM} distM={distM} depthM={depthM} flow={flow} />}
           </Pressable>
         ) : (
           <View style={st.diagramWrap} accessible accessibilityLabel={`Side view. Water is ${formatDepth(depth)} deep next to an adult and a car.`}>
-            <DepthDiagram depth={depth} height={Math.max(160, layout.H - 8)} />
+            {layout.W > 1 && <DepthDiagram depth={depth} width={layout.W} height={layout.H} />}
           </View>
         )}
 
@@ -446,10 +538,19 @@ export function RiseScreen() {
 
         {measuring && (
           <View style={st.measureBanner} pointerEvents="none">
-            <Text style={st.measureText}>Tap where the ground meets a wall, car or curb.</Text>
+            <Text style={st.measureText}>{tapHint || 'Tap where the ground meets a wall, car or curb.'}</Text>
           </View>
         )}
-        {gaugeLost && (
+        {cameraOn && (sensorStatus === 'unavailable' || sensorStatus === 'denied') && (
+          <View style={st.warnBanner} pointerEvents="none">
+            <Text style={st.warnText}>
+              {sensorStatus === 'denied'
+                ? 'Motion access is off, so the water can’t stay level as you tilt. Allow Motion & Fitness in Settings.'
+                : 'This phone has no motion sensor, so hold it level and pointed straight ahead.'}
+            </Text>
+          </View>
+        )}
+        {gaugeLost && !measuring && (
           <View style={st.lostBanner} pointerEvents="none">
             <Text style={st.lostText}>The river gauge stopped reporting here. The water kept rising.</Text>
           </View>
@@ -476,21 +577,29 @@ export function RiseScreen() {
         <View style={st.row}>
           <Pressable
             onPress={() => {
-              if (t >= n) setT(0);
-              setPlaying(p => !p);
+              if (atEnd) {
+                setT(0);
+                lastLevel.current = -1;
+                setPlaying(true);
+              } else {
+                setPlaying(p => !p);
+              }
             }}
             accessibilityRole="button"
-            accessibilityLabel={playing ? 'Pause timelapse' : 'Play timelapse'}
+            accessibilityLabel={isPlaying ? 'Pause timelapse' : atEnd ? 'Replay timelapse' : 'Play timelapse'}
             style={st.play}
           >
-            <Text style={st.playText}>{playing ? 'Pause' : t >= n ? 'Replay' : 'Play'}</Text>
+            <Text style={st.playText}>{isPlaying ? 'Pause' : atEnd ? 'Replay' : 'Play'}</Text>
           </Pressable>
-          <Pressable onPress={useCamera} accessibilityRole="button" style={st.secondary}>
+          <Pressable onPress={toggleView} accessibilityRole="button" style={st.secondary}>
             <Text style={st.secondaryText}>{view === 'camera' ? 'Side view' : 'Use camera'}</Text>
           </Pressable>
           {cameraOn && (
             <Pressable
-              onPress={() => setMeasuring(m => !m)}
+              onPress={() => {
+                setTapHint('');
+                setMeasuring(m => !m);
+              }}
               accessibilityRole="button"
               accessibilityState={{ selected: measuring }}
               style={[st.secondary, measuring && st.secondaryActive]}
@@ -499,14 +608,23 @@ export function RiseScreen() {
             </Pressable>
           )}
         </View>
+        {camDenied && view !== 'camera' && (
+          <View style={st.card}>
+            <Text style={st.cardText}>Camera access is off. The side view still shows the same water depth.</Text>
+            <Pressable onPress={() => Linking.openSettings().catch(() => {})} accessibilityRole="button" style={st.secondary}>
+              <Text style={st.secondaryText}>Open Settings</Text>
+            </Pressable>
+          </View>
+        )}
 
         <Timeline
           sc={sc}
           observed={observed}
-          forecast={source === 'forecast' ? forecastSeries : null}
+          forecast={effectiveSource === 'forecast' ? forecastSeries : null}
           t={t}
           groundFt={groundFt}
           marks={marks.filter(m => m.ft === 1 || m.ft === 5.7).map(m => ({ hour: m.hour, label: m.short }))}
+          depth={depth}
           onSeek={v => {
             setPlaying(false);
             setT(v);
@@ -529,15 +647,15 @@ export function RiseScreen() {
         {/* source toggle */}
         <Text style={st.sectionLabel}>Water level from</Text>
         <View style={st.segment} accessibilityRole="radiogroup">
-          <Seg label="What happened" active={source === 'observed'} onPress={() => setSource('observed')} />
+          <Seg label="What happened" active={effectiveSource === 'observed'} onPress={() => setSource('observed')} />
           <Seg
             label={hasForecast ? 'Model forecast' : 'Model (not trained yet)'}
-            active={source === 'forecast'}
+            active={effectiveSource === 'forecast'}
             disabled={!hasForecast}
             onPress={() => setSource('forecast')}
           />
         </View>
-        {source === 'forecast' && hasForecast && (
+        {effectiveSource === 'forecast' && (
           <>
             <View style={st.segment}>
               {LEADS.map(L => (
@@ -557,6 +675,9 @@ export function RiseScreen() {
 
         {/* ground stepper */}
         <Text style={st.sectionLabel}>Your ground is {groundFt} ft above the river’s normal level</Text>
+        <Text style={st.note}>
+          {peakHere > 0 ? `At the peak, water here would be ${formatDepth(peakHere)} deep.` : 'At this height the water never reaches you in this event.'}
+        </Text>
         <View style={st.row}>
           <Stepper label="Lower" onPress={() => setGroundFt(g => Math.max(0, g - 2))} />
           <Stepper label="Higher" onPress={() => setGroundFt(g => Math.min(60, g + 2))} />
@@ -673,6 +794,8 @@ const st = StyleSheet.create({
   clockDay: { fontSize: 12, color: K.muted },
   measureBanner: { position: 'absolute', bottom: 12, left: 12, right: 12, backgroundColor: K.white, borderRadius: 8, padding: 10 },
   measureText: { fontSize: 14, color: K.ink, textAlign: 'center', fontWeight: '600' },
+  warnBanner: { position: 'absolute', bottom: 12, left: 12, right: 12, backgroundColor: K.amberLight, borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#FDE047' },
+  warnText: { fontSize: 13, color: K.amber, textAlign: 'center', fontWeight: '600' },
   lostBanner: { position: 'absolute', bottom: 12, left: 12, right: 12, backgroundColor: K.red, borderRadius: 8, padding: 10 },
   lostText: { fontSize: 14, color: K.white, textAlign: 'center', fontWeight: '600' },
   panel: { flexGrow: 0, maxHeight: '52%', backgroundColor: K.white, borderTopWidth: 1, borderTopColor: K.border },
