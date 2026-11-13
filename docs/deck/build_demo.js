@@ -135,9 +135,9 @@ text(s, 'heatmaps', { x: 8.8, y: 2.72, w: 1.1, h: 0.28, fontSize: 11, color: C.a
 text(s, 'forecasts', { x: 8.8, y: 4.87, w: 1.1, h: 0.28, fontSize: 11, color: C.accent3, align: 'center' });
 text(s, [
   { text: 'LLMs: ', options: { bold: true, color: C.accent1 } },
-  { text: 'Qwen debugged the forecaster’s training; Claude Code was our coding assistant. App numbers come from trained models, not LLMs.' },
+  { text: 'Qwen on the USAA Datathon Qwen server debugged the forecaster’s training. App numbers come from trained models, not LLMs.' },
 ], { x: 0.6, y: 6.58, w: 12.1, h: 0.35, fontSize: 13 });
-s.addNotes('[2:30–3:15] Left to right: four datasets feed four models; the app shows their results. The UTSA photo metadata picked the 18 river gauges we trained on. The forecaster was trained on the USAA Datathon Qwen server, where the Qwen LLM debugged the training code. Claude Code helped us write the app and pipelines. No number in the app comes from an LLM.');
+s.addNotes('[2:30–3:15] Left to right: four datasets feed four models; the app shows their results. The UTSA photo metadata picked the 18 river gauges we trained on. The forecaster was trained on the USAA Datathon Qwen server, where the Qwen LLM debugged the training code. No number in the app comes from an LLM.');
 
 
 // ================================================================ 4. results + impact
@@ -155,17 +155,17 @@ res.forEach(([big, h, b], i) => {
   text(s, b, { x: 0.95, y: y + 1.35, w: 5.5, h: 0.9, fontSize: 14, valign: 'top' });
 });
 s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: 7.1, y: 1.6, w: 5.6, h: 4.9, rectRadius: 0.12, fill: { color: C.text2 }, line: { color: C.text2 }, objectName: 'impact-card' });
-text(s, 'Social impact we’re aiming for', { x: 7.45, y: 1.9, w: 5.0, h: 0.5, fontFace: 'Cambria', fontSize: 22, bold: true, color: C.background1 });
+text(s, 'Social impact: show how severe flash floods are', { x: 7.45, y: 1.85, w: 5.0, h: 0.75, fontFace: 'Cambria', fontSize: 22, bold: true, color: C.background1, valign: 'top' });
 text(s, [
-  { text: 'People move to higher ground, and turn around at flooded roads, before the water reaches them.', options: { breakLine: true, bold: true } },
+  { text: 'People underestimate flash floods. Waterline makes their speed and depth felt: ankle-deep to over your head in minutes.', options: { breakLine: true, bold: true } },
   { text: ' ', options: { breakLine: true, fontSize: 8 } },
-  { text: 'For Hill Country river corridors and camps, low-water-crossing commuters, and students new to Texas.', options: { breakLine: true } },
+  { text: 'Real Texas gauges and photos, replayed where you stand, so the danger feels local, not distant.', options: { breakLine: true } },
   { text: ' ', options: { breakLine: true, fontSize: 8 } },
-  { text: 'Screen-reader labels, haptics and a no-camera view; honest that it replays past floods, not a forecast.', options: { breakLine: true } },
+  { text: 'For those most exposed: Hill Country river corridors and camps, low-water-crossing commuters, students new to Texas.', options: { breakLine: true } },
   { text: ' ', options: { breakLine: true, fontSize: 8 } },
-  { text: 'Next: live forecasts, a flood map, Spanish, and a pilot with a county emergency office.' },
-], { x: 7.45, y: 2.55, w: 4.95, h: 3.8, fontSize: 16, color: C.background1, valign: 'top' });
-s.addNotes('[3:15–4:00] Results: the photo classifier, trained on 138 photos we labelled and agreed on, scores 0.86. The forecaster beats the “river stays the same” baseline on floods it never saw, though sudden surges remain hard. Our goal is behaviour: people leaving earlier and turning around at flooded roads. Thank you.');
+  { text: 'Accessible: screen-reader labels, haptics and a no-camera view.' },
+], { x: 7.45, y: 2.95, w: 4.95, h: 3.4, fontSize: 16, color: C.background1, valign: 'top' });
+s.addNotes('[3:15–4:00] Results: the photo classifier, trained on 138 photos we labelled and agreed on, scores 0.86. The forecaster beats the “river stays the same” baseline on floods it never saw, though sudden surges remain hard. Our goal is awareness: flash floods rise in minutes, not hours, and seeing that where you stand makes people take warnings seriously. Thank you.');
 
 (async () => {
   await pres.writeFile({ fileName: OUT });

@@ -112,12 +112,12 @@ s.addNotes('Three parts. Rise is the experience: a real flood replayed on the wa
 
 // ================================================================ 4. impact
 s = pres.addSlide({ masterName: 'CONTENT', sectionTitle: 'What we built' });
-s.addText('The social impact we’re aiming for', { placeholder: 'title' });
+s.addText('Social impact: show how severe flash floods are', { placeholder: 'title' });
 const impact = [
-  ['Leave earlier', 'Seeing water reach your knees in minutes makes “move to higher ground now” feel real, before the water is at the door.'],
-  ['Reach who’s exposed', 'Hill Country river corridors and camps, commuters at low-water crossings, renters and students new to the area.'],
-  ['Accessible by design', 'Screen-reader labels, haptic warnings, a no-camera side view and large controls. Spanish is next.'],
-  ['Honest, not alarmist', 'Every screen says it is an illustration of a past flood, not a forecast, and points to official warnings.'],
+  ['Feel the speed', 'Ankle-deep to over your head in minutes, from a real Texas gauge, replayed where you stand.'],
+  ['Make it local', 'Real USGS gauges and real aerial photos of Texas floods, not a generic animation.'],
+  ['Reach who underestimates it', 'Hill Country river corridors and camps, low-water-crossing commuters, students new to Texas.'],
+  ['Accessible and honest', 'Screen-reader labels, haptics and a no-camera view; clearly a replay of past floods, not a forecast.'],
 ];
 impact.forEach(([h, b], i) => {
   const x = 0.6 + (i % 2) * 6.15;
@@ -126,8 +126,8 @@ impact.forEach(([h, b], i) => {
   text(s, h, { x: x + 0.35, y: y + 0.3, w: 5.3, h: 0.45, fontFace: 'Cambria', fontSize: 22, bold: true, color: C.text2 });
   text(s, b, { x: x + 0.35, y: y + 0.85, w: 5.3, h: 1.05, fontSize: 16, valign: 'top' });
 });
-text(s, [{ text: 'Goal: ', options: { bold: true, color: C.accent1 } }, { text: 'more people move to higher ground, and turn around at flooded roads, before the water reaches them.' }], { x: 0.6, y: 6.2, w: 12.1, h: 0.45, fontSize: 18 });
-s.addNotes('Our hoped-for impact: people act earlier. We are not claiming measured outcomes yet; a pilot with a county emergency office or a school could test whether people say they would leave sooner after using it.');
+text(s, [{ text: 'Goal: ', options: { bold: true, color: C.accent1 } }, { text: 'people understand how fast and deep a flash flood gets, and take warnings seriously.' }], { x: 0.6, y: 6.2, w: 12.1, h: 0.45, fontSize: 18 });
+s.addNotes('Our aim is awareness of how severe flash floods are. We are not claiming measured outcomes yet; a pilot with a county emergency office or a school could test whether people rate flash floods as more dangerous after using it.');
 
 // ================================================================ 5. diagram
 pres.addSection({ title: 'How it works' });
@@ -266,7 +266,6 @@ s = pres.addSlide({ masterName: 'CONTENT', sectionTitle: 'AI use' });
 s.addText('How we used LLMs', { placeholder: 'title' });
 const llm = [
   ['Q', 'Qwen 3.8 27B · USAA Datathon Qwen server', 'Debugged the river forecaster’s training code, running on the same machine that trained the model.', C.accent1],
-  ['C', 'Claude Code (Anthropic) · coding assistant', 'Helped write the app, the AR camera math, the data pipelines and the evaluation scripts, and checked results with us.', C.accent1],
   ['✓', 'What LLMs did not do', 'No number in the app comes from an LLM. Forecasts, heatmaps and flood scores come from the trained models; the training labels came from two team members.', C.text2],
 ];
 llm.forEach(([g, h, b, fill], i) => {
