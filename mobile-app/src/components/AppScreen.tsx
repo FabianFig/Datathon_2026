@@ -26,6 +26,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { samplePairs } from '../data/samplePairs';
 import { RiseScreen } from './RiseScreen';
+import { ChangeCard, changeFor } from './ChangeCard';
 
 export type CueScore = {
   cue_score: number;
@@ -193,7 +194,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const matchesQuery = !query || searchTarget.includes(query.toLowerCase());
       if (!matchesQuery) return false;
       if (filterMode === 'high_priority') {
-        return p.dossier?.review_priority === 'high' || (p.after_cue?.above_threshold ?? false);
+        return p.dossier?.review_priority === 'high' || (p.after_cue?.above_threshold ?? false) || (changeFor(p.after_id)?.percentile ?? 0) >= 90;
       }
       if (filterMode === 'reviewed') {
         return !!p.review;
@@ -764,6 +765,8 @@ export function AppScreen({ tab }: { tab: Tab }) {
               </View>
             </View>
           )}
+
+          <ChangeCard afterId={pair.after_id} afterUrl={afterImg} />
 
           {/* Quick Camera Navigation CTA */}
           <Pressable

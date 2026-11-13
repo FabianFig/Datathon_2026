@@ -15,11 +15,17 @@ The app opens on **Rise**. Pick a real flood, press Play, and watch the water ri
 
 Replayed events (all held out of model training): Guadalupe River at Hunt and at Kerrville (July 4 2025), W Fork San Jacinto near Humble and Buffalo Bayou near Addicks (Harvey 2017). Depth at "your spot" = river rise minus the ground height you set (default 20 ft above normal river level). It is an illustration, not a forecast for an address.
 
-## ML model: river-stage forecaster (`ml/`)
+## ML model 1: photo change detector (`ml/train_change_detector.py`)
+
+Self-supervised, trained on the 575 UTSA Harvey photo pairs with no labels. A frozen ResNet-50 turns each photo into a 16x16 grid of patch features, and a small conv "camera translator" learns to predict the 2017 NOAA photo's features from the 2016 USDA photo's features. Because the camera difference is shared by every pair, the translator learns it; a flood at one location is unique, so it can't. The patches it fails to predict are the change heatmap. Training uses a trimmed loss that ignores the 20% hardest patches so real changes aren't learned away, and 5-fold cross-validation grouped by spatial block, so every pair is scored by a model that never saw that area.
+
+Checks without labels, each compared with naive before/after feature distance: true-vs-shuffled-pair AUC, change contrast (top patches vs typical patch), and rank correlation with evidence the model never sees: 3-day rainfall, gauge rise between the two dates, FEMA flood zone and distance to a surveyed high-water mark. The app's Compare screen shows each pair's rank and heatmap, and the Explore "high priority" filter includes the top 10%.
+
+## ML model 2: river-stage forecaster (`ml/`)
 
 Predicts how many feet a river rises over the next 1–12 hours from the last 72 h of gauge height and rainfall. Trained on the 18 USGS gauges that the UTSA images link to (`usgs_gage_height_station_id`), 2014–2025, with Open-Meteo ERA5 hourly rain. Train <2021, validate 2021–22, test 2023+, and Harvey 2017 and the July 2025 Hill Country flood removed from training for every gauge. Compared with a persistence baseline (the river stays where it is) using RMSE, rising-water RMSE and CSI for 2 ft rises. Models: LightGBM per lead time, plus a GRU when run with `--gru`.
 
-**Train on Colab:** open `ml/Flood_Stage_Forecaster.ipynb` in Colab (GPU runtime), add a `GITHUB_TOKEN` secret with write access to this repo, and run all cells. The last cell commits `models/stage_forecaster/`, `ml/outputs/*.png` and `mobile-app/src/data/floodScenarios.json` and pushes. Everyone else: `git pull`, and Expo Go reloads with the forecast toggle enabled.
+**Train on Colab:** open `ml/Train_Models_Colab.ipynb` in Colab (GPU runtime), add a `GITHUB_TOKEN` secret with write access to this repo, and run all cells. The photos download straight into Colab in Part A, so nothing needs uploading. The last cell commits both models, `ml/outputs/`, `floodScenarios.json` and `changeScores.json`, and pushes. Everyone else: `git pull`, and Expo Go reloads with the forecast toggle enabled.
 
 Without Colab: `python ml/train_stage_forecaster.py --quick` (needs `pandas numpy lightgbm`; add `torch` for `--gru`). `python ml/build_scenarios.py` (stdlib only) refreshes the observed curves.
 

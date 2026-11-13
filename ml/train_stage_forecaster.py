@@ -24,7 +24,7 @@ Outputs:
   ml/outputs/*.png           scenario plots for slides
   mobile-app/src/data/floodScenarios.json  (observed + forecast curves)
 
-Run on Colab (see Flood_Stage_Forecaster.ipynb) or locally:
+Run on Colab (see Train_Models_Colab.ipynb) or locally:
     python ml/train_stage_forecaster.py --quick          # smoke test, ~2 min
     python ml/train_stage_forecaster.py --gru            # full run
 """

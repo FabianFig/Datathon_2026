@@ -107,7 +107,7 @@ def build(data_dir: Path | None = None, forecasts: dict | None = None, model: di
             "rain": "Open-Meteo historical archive (ERA5), mean of gauge + 4 points 25 km away",
             "images": "UTSA Texas flood images (jennifer-fowler/UTSA-flood-images), CC BY-NC 4.0",
         },
-        "model": model or {"trained": False, "name": None, "note": "Run ml/Flood_Stage_Forecaster.ipynb in Colab to add model forecasts."},
+        "model": model or {"trained": False, "name": None, "note": "Run ml/Train_Models_Colab.ipynb in Colab to add model forecasts."},
         "scenarios": scenarios,
     }
     out.parent.mkdir(parents=True, exist_ok=True)
