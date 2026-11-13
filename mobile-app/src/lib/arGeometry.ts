@@ -56,3 +56,63 @@ export function distanceFromTap(offset: number, pose: Pose, f: number, eyeM: num
   if (dep < (2 * Math.PI) / 180) return null; // at or above the horizon
   return Math.max(0.8, Math.min(40, eyeM / Math.tan(dep)));
 }
+
+/**
+ * Tracks turning left/right (yaw about world-up) by integrating the gyroscope.
+ *
+ * Platforms differ on gyro units (deg/s vs rad/s) and sometimes sign, so the
+ * tracker calibrates itself: while the phone is near upright, tilting it
+ * changes the gravity-derived pitch, and the gyro's x-axis rate must match
+ * that change. A least-squares ratio between the two gives both unit and sign.
+ * Positive yaw = turned left (counter-clockwise seen from above).
+ */
+export function createYawTracker() {
+  let yaw = 0;
+  let k = Math.PI / 180; // assume deg/s until calibrated
+  let sxy = 0;
+  let sxx = 0;
+  let calibrated = false;
+  let prevPitch: number | null = null;
+
+  return {
+    get yaw() {
+      return yaw;
+    },
+    get calibrated() {
+      return calibrated;
+    },
+    /** up: world-up in device axes; rate: raw gyro {x,y,z} about device axes; dt in seconds. */
+    update(up: Vec3, rate: Vec3, pose: Pose, dt: number) {
+      if (!(dt > 0 && dt < 0.2)) {
+        prevPitch = pose.pitch;
+        return yaw;
+      }
+      // Calibrate from pitch changes while roughly upright and not rolled.
+      if (prevPitch != null && Math.abs(pose.roll) < 0.35 && Math.abs(pose.pitch) < 1.0 && Math.abs(rate.x) > 1e-3) {
+        const pitchRate = (pose.pitch - prevPitch) / dt;
+        sxy += rate.x * pitchRate;
+        sxx += rate.x * rate.x;
+        const ratio = sxy / sxx;
+        const unit = Math.abs(ratio) > 0.2 ? 1 : Math.PI / 180; // rad/s vs deg/s
+        // Trust it once enough tilting has been seen (summed (rad/s)^2)
+        if (!calibrated && sxx * unit * unit > 3) calibrated = true;
+        if (calibrated) k = (ratio < 0 ? -1 : 1) * unit;
+      }
+      prevPitch = pose.pitch;
+      const n = Math.hypot(up.x, up.y, up.z) || 1;
+      const yawRate = k * ((rate.x * up.x + rate.y * up.y + rate.z * up.z) / n);
+      yaw += yawRate * dt;
+      return yaw;
+    },
+    reset() {
+      yaw = 0;
+    },
+  };
+}
+
+/** Horizontal screen offset (px, + = right) of a world bearing locked at `lockedYaw`. */
+export function offsetForBearing(lockedYaw: number, currentYaw: number, f: number): number | null {
+  const a = currentYaw - lockedYaw; // turned left since locking → the spot is now to the right
+  if (Math.abs(a) > 1.3) return null; // behind or far outside the view
+  return f * Math.tan(a);
+}

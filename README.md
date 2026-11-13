@@ -1,8 +1,8 @@
 # Flood Time Machine
 
-Datathon prototype for exploring historical Texas floods. The desktop analysis tool shows paired aerial imagery on a map, asks a GB10 vision model for a cautious change dossier, and collects human reviews. The main experience is a **React Native app for iOS and Android** in `mobile-app/`, with Explore, Compare, Camera, and Settings screens.
+Datathon prototype for exploring historical Texas floods. The desktop analysis tool shows paired aerial imagery on a map, asks a GB10 vision model for a cautious change dossier, and collects human reviews. The main experience is a **React Native app for iOS and Android** in `mobile-app/`, with Rise, Explore, Compare, and Settings screens.
 
-The phone camera view is an **illustrative historical overlay**, not a geographically registered waterline or a current flood forecast. The images and metadata come from the [UTSA flood dataset](https://huggingface.co/datasets/jennifer-fowler/UTSA-flood-images). The [GB10 competition repo](https://github.com/jennifer-fowler/GB10competition) provides related notebooks and context.
+Rise replays historical floods; it is not a current flood forecast for any address. The images and metadata come from the [UTSA flood dataset](https://huggingface.co/datasets/jennifer-fowler/UTSA-flood-images). The [GB10 competition repo](https://github.com/jennifer-fowler/GB10competition) provides related notebooks and context.
 
 ## Rise: AR flood timelapse (main demo)
 
@@ -75,15 +75,15 @@ npx expo start --lan
 
 Install **Expo Go** on your phone and scan the QR code printed by Expo. This project uses Expo SDK 58 to match current Expo Go. For remote testing from anywhere, use `npx expo start --tunnel`. With `--lan`, your phone and the machine running Expo need to share a reachable network. If that network isolates devices, restart with `npx expo start --tunnel ngrok` and scan the new QR code. In **Settings**, enter `http://YOUR_REACHABLE_HOST:8765`, then select a pair in Explore. If the GB10 is only reachable by SSH from your laptop, run the data service through an SSH tunnel and expose that tunnel to the phone through a trusted local network or HTTPS endpoint. `127.0.0.1` on the phone points to the phone itself.
 
-The app opens with eight real public sample pairs, so you can test Explore, Compare, and Camera before connecting the data service. Their images load from Hugging Face and require internet access. Connecting the service replaces the samples with the full paired catalog and available model dossiers.
+The app ships with all 575 UTSA before/after pairs (`mobile-app/src/data/catalog.json`, regenerated with `python export_catalog.py`), so Explore and Compare work in Expo Go without a server. Images load from Hugging Face and need internet access. The data service is optional; it adds live reviews and new model dossiers.
 
-The app requests camera permission only after **Start camera** is tapped. It uses native labeled controls and text findings so the comparison remains usable without the visual overlay. The old `mobile/` folder is a browser prototype and is not the mobile deliverable.
+The app requests camera permission only after **Use camera** is tapped on Rise, and the side view works without it. It uses native labeled controls and text findings so the comparison remains usable without the visual overlay. The old `mobile/` folder is a browser prototype and is not the mobile deliverable.
 
 ## What to demonstrate
 
 1. Pick a Harvey pair on the desktop and show the map, images, and model evidence.
 2. In the app, select a location, switch between before and after, and read the observation if a dossier exists.
-3. Open Camera, start the live view, and adjust overlay opacity. Explain what the aerial image cannot establish.
+3. Open Rise, play the Hunt 2025 replay in side view, then switch to **Use camera**, set a spot, and replay it in AR.
 4. Save a human review in `reviews/reviews.jsonl` for the evaluation story. Analyzed pairs save model dossiers in `reviews/dossiers/`, which the mobile server reads. Rerun the static export after new analyses to include them.
 
 The app works without a model; until a pair is analyzed, the comparison prompts a direct visual review. The four USCG views lack precise coordinates, and the July 2025 Hill Country images were captured after the flood peak; this first version uses the reciprocal 2016/2017 Harvey pairs.
