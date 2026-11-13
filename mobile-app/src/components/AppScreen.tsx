@@ -27,7 +27,7 @@ import catalogRaw from '../data/catalog.json';
 import { samplePairs } from '../data/samplePairs';
 import { LabelSheet } from './LabelScreen';
 import { RiseScreen } from './RiseScreen';
-import { ChangeCard, waterFor } from './ChangeCard';
+import { ChangeCard, floodFor, waterFor } from './ChangeCard';
 
 export type CueScore = {
   cue_score: number;
@@ -76,6 +76,13 @@ export type Pair = {
 
 type Tab = 'Rise' | 'Explore' | 'Compare' | 'Settings';
 type FilterMode = 'all' | 'high_priority' | 'floodwater' | 'reviewed';
+
+/** Classifier trained on team labels when available, else the floodwater colour rule's top 30%. */
+function likelyFlooded(afterId: string): boolean {
+  const f = floodFor(afterId);
+  if (f) return f.prob >= 0.5;
+  return (waterFor(afterId)?.percentile ?? 0) >= 70;
+}
 
 // Every UTSA before/after pair ships with the app (export_catalog.py), so
 // Expo Go shows the whole dataset without a server. The original sample
@@ -196,7 +203,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return p.dossier?.review_priority === 'high' || (p.after_cue?.above_threshold ?? false);
       }
       if (filterMode === 'floodwater') {
-        return (waterFor(p.after_id)?.percentile ?? 0) >= 70;
+        return likelyFlooded(p.after_id);
       }
       if (filterMode === 'reviewed') {
         return !!p.review;
@@ -532,7 +539,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
                 [
                   { key: 'all', label: `All Pairs (${pairs.length})` },
                   { key: 'high_priority', label: 'Flagged Evidence' },
-                  { key: 'floodwater', label: 'Most floodwater' },
+                  { key: 'floodwater', label: 'Likely flooded' },
                   { key: 'reviewed', label: 'Human Reviewed' },
                 ] as const
               ).map(item => (
@@ -616,8 +623,8 @@ export function AppScreen({ tab }: { tab: Tab }) {
                           <Text style={s.cueAlertText}>Flood Cue Flag</Text>
                         </View>
                       )}
-                      {(waterFor(item.after_id)?.percentile ?? 0) >= 70 && (
-                        <Text style={s.rowSourceTag}>Floodwater</Text>
+                      {likelyFlooded(item.after_id) && (
+                        <Text style={s.rowSourceTag}>Likely flooded</Text>
                       )}
                       {isReviewed && (
                         <View style={s.reviewedPill}>

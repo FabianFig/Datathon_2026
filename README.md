@@ -48,6 +48,8 @@ Self-supervised, trained on the 575 UTSA Harvey photo pairs with no labels. A fr
 python ml/train_flood_classifier.py --data-dir ../UTSA-flood-images
 ```
 
+**Result (Nov 13, labels from JP and FF):** two people labelled the same 150 photos and agreed on 137 of 149 (92%, Cohen's κ 0.62); only photos they agreed on are used (138: 126 flooded, 12 dry). With 5-fold cross-validation grouped by area, the classifier reaches AUC 0.86 (95% CI 0.80–0.92) and balanced accuracy 0.86 (finds 79% of flooded and 92% of dry photos), against AUC 0.81 (0.74–0.89) for the floodwater colour rule alone, 0.47 for the self-supervised change model alone, and balanced accuracy 0.50 for always answering "flooded". Only 12 dry photos, so the intervals are wide.
+
 It needs no installs and runs in under a second. It combines labellers by majority vote, trains a logistic regression on the floodwater index and change-model features, reports grouped cross-validated AUC and accuracy against each single score and the majority-class baseline, and writes `mobile-app/src/data/floodScores.json`; Compare then shows "Flood classifier: N% likely flooded". The AI-made labels are left out unless you pass `--include-ai-labels`.
 
 Checks without labels, each compared with naive before/after feature distance: true-vs-shuffled-pair AUC, change contrast (top patches vs typical patch), and rank correlation with evidence the model never sees: 3-day rainfall, gauge rise between the two dates, FEMA flood zone and distance to a surveyed high-water mark. The app's Compare screen shows each pair's rank and heatmap, and the Explore "high priority" filter includes the top 10%.

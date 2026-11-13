@@ -97,7 +97,7 @@ export function ChangeCard({ afterId, afterUrl }: { afterId: string; afterUrl: s
         <Text style={st.classifier}>
           Flood classifier: {Math.round((floodFor(afterId)?.prob ?? 0) * 100)}% likely flooded
           <Text style={st.bigSub}>
-            {'  '}(trained on {flood.model.labels} team labels, AUC {flood.model.cv_auc})
+            {'  '}(trained on {flood.model.labels} team-labelled photos; ranks flooded above dry {Math.round((flood.model.cv_auc ?? 0) * 100)}% of the time)
           </Text>
         </Text>
       )}

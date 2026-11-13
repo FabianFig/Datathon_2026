@@ -176,12 +176,29 @@ def main():
 
     cv_auc = auc(oof, y)
     acc = sum((p >= 0.5) == bool(t) for p, t in zip(oof, y)) / len(y)
+    tp = sum(p >= 0.5 and t for p, t in zip(oof, y))
+    tn = sum(p < 0.5 and not t for p, t in zip(oof, y))
+    rec_wet, rec_dry = tp / max(1, sum(y)), tn / max(1, len(y) - sum(y))
+    bal = (rec_wet + rec_dry) / 2
+
+    def boot_ci(scores, labels, n=1000):
+        rng = random.Random(1)
+        vals = []
+        for _ in range(n):
+            idx = [rng.randrange(len(labels)) for _ in labels]
+            v = auc([scores[i] for i in idx], [labels[i] for i in idx])
+            if v is not None:
+                vals.append(v)
+        vals.sort()
+        return vals[int(0.025 * len(vals))], vals[int(0.975 * len(vals)) - 1]
+
+    ci = boot_ci(oof, y)
     base = {n: auc([x[j] for x in X], y) for j, n in enumerate(names) if n in ("water_score", "change_score")}
     print(f"{len(ids)} labelled photos ({sum(y)} flooded, {len(y) - sum(y)} dry), {len(groups)} spatial groups, {args.folds}-fold grouped CV")
-    print(f"classifier   AUC {cv_auc:.3f}   accuracy {acc:.3f}")
+    print(f"classifier   AUC {cv_auc:.3f} (95% CI {ci[0]:.2f}-{ci[1]:.2f})   balanced accuracy {bal:.3f}  [flooded found {rec_wet:.0%}, dry found {rec_dry:.0%}]   accuracy {acc:.3f}")
     for n, v in base.items():
         print(f"{n:12s} AUC {v:.3f} (single score, no training)")
-    print(f"majority-class accuracy {max(sum(y), len(y) - sum(y)) / len(y):.3f}")
+    print(f"always-'flooded' baseline: accuracy {max(sum(y), len(y) - sum(y)) / len(y):.3f}, balanced accuracy 0.500")
 
     final = fit(X, y)
     all_ids = list(feats)
@@ -196,6 +213,10 @@ def main():
             "flooded": sum(y),
             "cv_auc": round(cv_auc, 3) if cv_auc is not None else None,
             "cv_accuracy": round(acc, 3),
+            "cv_balanced_accuracy": round(bal, 3),
+            "cv_recall_flooded": round(rec_wet, 3),
+            "cv_recall_dry": round(rec_dry, 3),
+            "cv_auc_95ci": [round(ci[0], 3), round(ci[1], 3)],
             "baseline_auc": {k: round(v, 3) for k, v in base.items() if v is not None},
             "majority_accuracy": round(max(sum(y), len(y) - sum(y)) / len(y), 3),
             "features": names,
