@@ -1,0 +1,9 @@
+{
+  "cue_score": 0.3932,
+  "threshold": 0.46,
+  "above_threshold": false,
+  "confidence": "marginal",
+  "label": "No strong flood cue",
+  "disclaimer": "Experimental FloodNet UAV cue. Not ground truth or flood depth.",
+  "image_id": "TX001_2017_NOAA"
+}

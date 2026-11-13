@@ -1,0 +1,16 @@
+{
+  "summary": "The later image shows widespread flooding in a residential area, with water covering many homes and streets, a change from the dry state in the first image.",
+  "visible_water_before": "yes",
+  "visible_water_after": "yes",
+  "evidence": [
+    "Image 2 shows extensive water coverage in the residential area, while Image 1 does not.",
+    "The water in Image 2 appears to be covering the ground and rooftops, indicating a flood.",
+    "The water level in Image 2 is higher than in Image 1, and it is covering more areas"
+  ],
+  "limitations": [
+    "The change is due to a flood, but the metadata indicates the images are from different years, so the timing of the flood is not certain.",
+    "The images are aerial, and the resolution and alignment are not sufficient to confirm the exact cause of the change.",
+    "The water in Image 2 is not clearly visible in the first image, so the change is not fully confirmed."
+  ],
+  "review_priority": "high"
+}

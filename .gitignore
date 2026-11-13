@@ -1,0 +1,55 @@
+# Datasets & raw archives (Do NOT commit datasets)
+UTSA-flood-images/
+Texas_Flood_Student_Data/
+work/
+*.zip
+*.tar
+*.tar.gz
+*.h5
+*.parquet
+
+# Virtual environments
+.venv/
+.venv*/
+venv/
+env/
+ENV/
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+test.ipynb
+
+# Node & Expo artifacts
+node_modules/
+mobile-app/node_modules/
+.expo/
+mobile-app/.expo/
+dist/
+web-build/
+
+# IDE & OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Secrets & local environment
+.env
+.env.*
+*.key
+*.pem
+*.log

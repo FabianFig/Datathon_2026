@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Flood Time Machine",
+    "slug": "flood-time-machine",
+    "scheme": "floodtimemachine",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F7F8F4",
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Flood Time Machine to show an illustrative historical image over your camera view.",
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-router"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#F7F8F4",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
