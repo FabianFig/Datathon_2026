@@ -4,6 +4,25 @@ Datathon prototype for exploring historical Texas floods. The desktop analysis t
 
 The phone camera view is an **illustrative historical overlay**, not a geographically registered waterline or a current flood forecast. The images and metadata come from the [UTSA flood dataset](https://huggingface.co/datasets/jennifer-fowler/UTSA-flood-images). The [GB10 competition repo](https://github.com/jennifer-fowler/GB10competition) provides related notebooks and context.
 
+## Rise: AR flood timelapse (main demo)
+
+The app opens on **Rise**. Pick a real flood, press Play, and watch the water rise around you hour by hour, with the clock, depth in feet and inches, and markers for when moving water knocks you down, cars float, and water goes over your head.
+
+* **Camera mode** draws a water surface over the live camera that stays level with the real ground as you tilt the phone. It uses the phone's motion sensors (pitch/roll from gravity) plus one tap: **Set spot**, then tap where the ground meets a wall, car or curb. The app works out that spot's distance from the tilt angle and your phone's height, then draws the waterline at the correct height on it. This runs in **Expo Go**. LiDAR (the infrared depth sensor on Pro iPhones) would remove the tap step, but Expo Go can't access ARKit depth; that needs a development build (`expo-dev-client`).
+* **Side view** is the non-camera, screen-reader-friendly version: an adult and a car with the water rising.
+* Haptics and screen-reader announcements fire as each depth threshold is crossed.
+* **Water level from → Model forecast** swaps the observed river level for what the ML model predicted 1, 3 or 6 hours earlier.
+
+Replayed events (all held out of model training): Guadalupe River at Hunt and at Kerrville (July 4 2025), W Fork San Jacinto near Humble and Buffalo Bayou near Addicks (Harvey 2017). Depth at "your spot" = river rise minus the ground height you set (default 20 ft above normal river level). It is an illustration, not a forecast for an address.
+
+## ML model: river-stage forecaster (`ml/`)
+
+Predicts how many feet a river rises over the next 1–12 hours from the last 72 h of gauge height and rainfall. Trained on the 18 USGS gauges that the UTSA images link to (`usgs_gage_height_station_id`), 2014–2025, with Open-Meteo ERA5 hourly rain. Train <2021, validate 2021–22, test 2023+, and Harvey 2017 and the July 2025 Hill Country flood removed from training for every gauge. Compared with a persistence baseline (the river stays where it is) using RMSE, rising-water RMSE and CSI for 2 ft rises. Models: LightGBM per lead time, plus a GRU when run with `--gru`.
+
+**Train on Colab:** open `ml/Flood_Stage_Forecaster.ipynb` in Colab (GPU runtime), add a `GITHUB_TOKEN` secret with write access to this repo, and run all cells. The last cell commits `models/stage_forecaster/`, `ml/outputs/*.png` and `mobile-app/src/data/floodScenarios.json` and pushes. Everyone else: `git pull`, and Expo Go reloads with the forecast toggle enabled.
+
+Without Colab: `python ml/train_stage_forecaster.py --quick` (needs `pandas numpy lightgbm`; add `torch` for `--gru`). `python ml/build_scenarios.py` (stdlib only) refreshes the observed curves.
+
 ## Data
 
 The local data directory must contain `image_metadata.csv` and `images/`:
@@ -48,7 +67,7 @@ npm ci
 npx expo start --lan
 ```
 
-Install **Expo Go** on your phone and scan the QR code printed by Expo. This project uses Expo SDK 58 to match current Expo Go. With `--lan`, your phone and the machine running Expo need to share a reachable network. If that network isolates devices, restart with `npx expo start --tunnel ngrok` and scan the new QR code. In **Settings**, enter `http://YOUR_REACHABLE_HOST:8765`, then select a pair in Explore. If the GB10 is only reachable by SSH from your laptop, run the data service through an SSH tunnel and expose that tunnel to the phone through a trusted local network or HTTPS endpoint. `127.0.0.1` on the phone points to the phone itself.
+Install **Expo Go** on your phone and scan the QR code printed by Expo. This project uses Expo SDK 58 to match current Expo Go. For remote testing from anywhere, use `npx expo start --tunnel`. With `--lan`, your phone and the machine running Expo need to share a reachable network. If that network isolates devices, restart with `npx expo start --tunnel ngrok` and scan the new QR code. In **Settings**, enter `http://YOUR_REACHABLE_HOST:8765`, then select a pair in Explore. If the GB10 is only reachable by SSH from your laptop, run the data service through an SSH tunnel and expose that tunnel to the phone through a trusted local network or HTTPS endpoint. `127.0.0.1` on the phone points to the phone itself.
 
 The app opens with eight real public sample pairs, so you can test Explore, Compare, and Camera before connecting the data service. Their images load from Hugging Face and require internet access. Connecting the service replaces the samples with the full paired catalog and available model dossiers.
 

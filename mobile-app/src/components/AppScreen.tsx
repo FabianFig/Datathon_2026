@@ -25,6 +25,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { samplePairs } from '../data/samplePairs';
+import { RiseScreen } from './RiseScreen';
 
 export type CueScore = {
   cue_score: number;
@@ -71,7 +72,7 @@ export type Pair = {
   review?: HumanReview | null;
 };
 
-type Tab = 'Explore' | 'Compare' | 'Camera' | 'Settings';
+type Tab = 'Rise' | 'Explore' | 'Compare' | 'Camera' | 'Settings';
 type Phase = 'before' | 'after';
 type CompareMode = 'split' | 'toggle' | 'sideBySide';
 
@@ -206,7 +207,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!base) {
       setApiBase('');
       setError('');
-      router.replace('/');
+      router.replace('/explore');
       return;
     }
     if (!/^https?:\/\//i.test(base)) {
@@ -215,7 +216,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     setApiBase(base);
     load(base);
-    router.replace('/');
+    router.replace('/explore');
   }
 
   async function toggleCamera() {
@@ -419,7 +420,8 @@ export function AppScreen({ tab }: { tab: Tab }) {
     if (target !== 'Camera') stopCamera();
     router.replace(
       ({
-        Explore: '/',
+        Rise: '/',
+        Explore: '/explore',
         Compare: '/compare',
         Camera: '/camera',
         Settings: '/settings',
@@ -453,6 +455,8 @@ export function AppScreen({ tab }: { tab: Tab }) {
           <Text style={s.statusText}>{apiBase ? 'Live Catalog' : '8 Samples'}</Text>
         </Pressable>
       </View>
+
+      {tab === 'Rise' && <RiseScreen />}
 
       {/* ---------------------------------------------------------------- */}
       {/* EXPLORE TAB */}
@@ -1145,7 +1149,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
                 onPress={() => {
                   setApiInput('');
                   setApiBase('');
-                  router.replace('/');
+                  router.replace('/explore');
                 }}
                 style={[s.buttonSecondary, { marginTop: 10 }]}
               >
@@ -1189,7 +1193,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
       {/* Bottom Tab Bar (Accessible, Restrained ByteRight Aesthetic) */}
       {/* ---------------------------------------------------------------- */}
       <View style={s.nav} accessibilityRole="tablist">
-        {(['Explore', 'Compare', 'Camera', 'Settings'] as Tab[]).map(item => {
+        {(['Rise', 'Explore', 'Compare', 'Camera', 'Settings'] as Tab[]).map(item => {
           const isActive = tab === item;
           return (
             <Pressable

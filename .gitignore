@@ -53,3 +53,6 @@ Thumbs.db
 *.key
 *.pem
 *.log
+
+# ML download cache (USGS / Open-Meteo)
+ml/cache/
