@@ -17,6 +17,7 @@ import {
   type GestureResponderEvent,
   type LayoutChangeEvent,
 } from 'react-native';
+import { locateMySpot, type SpotResult } from '../lib/mySpot';
 import { PhotoViewer } from './PhotoViewer';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import {
@@ -552,6 +553,23 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
   const [source, setSource] = useState<Source>('observed');
   const [lead, setLead] = useState(3);
   const [groundFt, setGroundFt] = useState(20);
+  const [spot, setSpot] = useState<SpotResult | null>(null);
+  const [spotBusy, setSpotBusy] = useState('');
+  const [spotError, setSpotError] = useState('');
+
+  async function useMySpot() {
+    setSpotError('');
+    try {
+      const r = await locateMySpot(setSpotBusy);
+      setSpot(r);
+      setGroundFt(Math.round(r.aboveLowFt));
+      AccessibilityInfo.announceForAccessibility(`You are ${Math.round(r.aboveLowFt)} feet above the low ground near you`);
+    } catch (e) {
+      setSpotError(e instanceof Error ? e.message : 'Could not look up your spot.');
+    } finally {
+      setSpotBusy('');
+    }
+  }
   const [eyeM, setEyeM] = useState(1.4);
   const [distM, setDistM] = useState(4);
   const [fovDeg, setFovDeg] = useState(69);
@@ -823,7 +841,10 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
           <Text style={st.depthValue} accessibilityLiveRegion="polite">
             {formatDepth(depth)}
           </Text>
-          <Text style={st.depthLabel}>{level ? level.label : 'Ground is still dry'}</Text>
+          <Text style={st.depthLabel}>
+            {level ? level.label : 'Ground is still dry'}
+            {spot ? ' · at your spot' : ''}
+          </Text>
           <Text style={st.hudClock}>
             {clock.time} · {clock.day}
           </Text>
@@ -968,6 +989,13 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
             <Text style={st.iconBtnText}>{SPEEDS[speedIdx]}×</Text>
           </Pressable>
         </View>
+        {!showMore && !spot && (
+          <Pressable onPress={useMySpot} disabled={!!spotBusy} accessibilityRole="button" style={st.spotLink} hitSlop={6}>
+            <Text style={st.link}>{spotBusy || 'Use my location for how deep it would get here'}</Text>
+          </Pressable>
+        )}
+        {!showMore && spotError ? <Text style={st.noteSmall}>{spotError}</Text> : null}
+
         {camIssue && view !== 'camera' && (
           <View style={st.card}>
             <Text style={st.cardText}>
@@ -1029,14 +1057,58 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
 
         {apiBase ? <LiveForecastCard key={sc.gauge_id} apiBase={apiBase} gauge={sc.gauge_id} gaugeName={sc.gauge_name} /> : null}
 
+        {/* your spot from GPS */}
+        <View style={st.card}>
+          <Text style={st.cardTitle}>{spot ? 'Using your spot' : 'Use your spot'}</Text>
+          {spot ? (
+            <>
+              <Text style={st.cardText}>
+                You’re {Math.round(spot.aboveLowFt)} ft above the lowest ground within {spot.lowestDistanceM >= 1000 ? '1 km' : `${spot.lowestDistanceM || 300} m`}{' '}
+                ({Math.round(spot.elevationFt)} ft vs {Math.round(spot.lowestFt)} ft above sea level, USGS lidar). The replay
+                raises water from that low ground by as much as {sc.title} rose, so you see how deep it would get where you stand.
+              </Text>
+              <Text style={st.noteSmall}>
+                Nearest river gauge in this dataset: {spot.nearestGauge.name}, {spot.nearestGauge.km} km away. This is an
+                illustration, not a flood forecast for your address.
+              </Text>
+            </>
+          ) : (
+            <Text style={st.cardText}>
+              Look up your ground elevation, and the elevation of low ground around you, to replace the 20 ft guess with
+              your real height.
+            </Text>
+          )}
+          {spotBusy ? <Text style={st.noteSmall}>{spotBusy}</Text> : null}
+          {spotError ? <Text style={st.noteSmall}>{spotError}</Text> : null}
+          <Pressable
+            disabled={!!spotBusy}
+            onPress={useMySpot}
+            accessibilityRole="button"
+            style={[st.secondary, !!spotBusy && { opacity: 0.5 }]}
+          >
+            <Text style={st.secondaryText}>{spotBusy ? 'Looking up…' : spot ? 'Update my spot' : 'Use my location'}</Text>
+          </Pressable>
+        </View>
+
         {/* ground stepper */}
-        <Text style={st.sectionLabel}>Your ground is {groundFt} ft above the river’s normal level</Text>
+        <Text style={st.sectionLabel}>
+          {spot ? `Your ground is ${groundFt} ft above the low ground near you` : `Your ground is ${groundFt} ft above the river’s normal level`}
+        </Text>
         <Text style={st.note}>
           {peakHere > 0 ? `At the peak, water here would be ${formatDepth(peakHere)} deep.` : 'At this height the water never reaches you in this event.'}
         </Text>
         <View style={st.row}>
           <Stepper label="Lower" onPress={() => setGroundFt(g => Math.max(0, g - 2))} />
           <Stepper label="Higher" onPress={() => setGroundFt(g => Math.min(60, g + 2))} />
+          {spot && (
+            <Stepper
+              label="Forget my spot"
+              onPress={() => {
+                setSpot(null);
+                setGroundFt(20);
+              }}
+            />
+          )}
         </View>
 
         {cameraOn && (
@@ -1239,6 +1311,7 @@ const st = StyleSheet.create({
   stepper: { flex: 1, minHeight: 44, borderRadius: 8, borderWidth: 1, borderColor: K.borderStrong, alignItems: 'center', justifyContent: 'center' },
   note: { fontSize: 13, lineHeight: 19, color: K.ink2 },
   noteSmall: { fontSize: 12, lineHeight: 17, color: K.muted },
+  spotLink: { minHeight: 36, justifyContent: 'center' },
   linkRow: { minHeight: 44, justifyContent: 'center' },
   link: { fontSize: 15, fontWeight: '600', color: K.green },
   card: { borderWidth: 1, borderColor: K.border, borderRadius: 10, padding: 14, gap: 8, backgroundColor: K.bg },

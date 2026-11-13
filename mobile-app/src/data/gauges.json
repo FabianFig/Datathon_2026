@@ -1,0 +1,92 @@
+{
+"USGS-08114000": {
+"name": "Brazos Rv at Richmond",
+"lat": 29.5825,
+"lon": -95.7577
+},
+"USGS-08069500": {
+"name": "W Fk San Jacinto Rv nr Humble",
+"lat": 30.0272,
+"lon": -95.258
+},
+"USGS-08072680": {
+"name": "S Mayde Ck at Heathergold Dr nr Addicks",
+"lat": 29.8051,
+"lon": -95.7096
+},
+"USGS-08116400": {
+"name": "Dry Ck nr Rosenberg",
+"lat": 29.5119,
+"lon": -95.7469
+},
+"USGS-08073500": {
+"name": "Buffalo Bayou nr Addicks",
+"lat": 29.7619,
+"lon": -95.6058
+},
+"USGS-08073100": {
+"name": "Langham Ck at Addicks Res Outflow",
+"lat": 29.7903,
+"lon": -95.6239
+},
+"USGS-08072760": {
+"name": "Langham Ck at W Little York Rd",
+"lat": 29.8672,
+"lon": -95.6466
+},
+"USGS-08072800": {
+"name": "Langham Ck nr Addicks",
+"lat": 29.8358,
+"lon": -95.6258
+},
+"USGS-08041700": {
+"name": "Pine Island Bayou nr Sour Lake",
+"lat": 30.106,
+"lon": -94.3346
+},
+"USGS-08111850": {
+"name": "Brazos Rv at San Felipe",
+"lat": 29.8083,
+"lon": -96.0956
+},
+"USGS-08072300": {
+"name": "Buffalo Bayou nr Katy",
+"lat": 29.7433,
+"lon": -95.8069
+},
+"USGS-08072730": {
+"name": "Bear Ck nr Barker",
+"lat": 29.8308,
+"lon": -95.6869
+},
+"USGS-08074800": {
+"name": "Keegans Bayou at Roark Rd",
+"lat": 29.6566,
+"lon": -95.5622
+},
+"USGS-08166250": {
+"name": "Guadalupe Rv nr Center Point",
+"lat": 29.9878,
+"lon": -99.11
+},
+"USGS-08166140": {
+"name": "Guadalupe Rv abv Bear Ck at Kerrville",
+"lat": 30.0697,
+"lon": -99.1953
+},
+"USGS-08166200": {
+"name": "Guadalupe Rv at Kerrville",
+"lat": 30.0533,
+"lon": -99.1634
+},
+"USGS-08165500": {
+"name": "Guadalupe Rv at Hunt",
+"lat": 30.0699,
+"lon": -99.3217
+},
+"USGS-08167000": {
+"name": "Guadalupe Rv at Comfort",
+"lat": 29.9652,
+"lon": -98.8972
+}
+}

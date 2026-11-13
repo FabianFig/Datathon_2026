@@ -22,6 +22,12 @@
         {
           "motionPermission": "Allow Flood Time Machine to use motion sensors to keep simulated flood water level with the ground."
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Your location is used once to look up your ground elevation, so the flood replay shows how deep the water would get where you stand."
+        }
       ]
     ],
     "ios": {

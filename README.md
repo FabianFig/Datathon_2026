@@ -13,6 +13,8 @@ The app opens on **Rise**. Pick a real flood, press Play, and watch the water ri
 * Haptics and screen-reader announcements fire as each depth threshold is crossed.
 * **Water level from → Model forecast** swaps the observed river level for what the ML model predicted 1, 3 or 6 hours earlier.
 
+* **Use my location** looks up your ground elevation and 16 points 300 m and 1 km around you from the USGS 3DEP elevation service (lidar), then sets "your ground" to your height above the lowest of them. Water fills low ground first, so the replay raises water from that low point by as much as the river rose, showing roughly how deep it would get where you stand. It is an illustration, not a flood map for the address. US only.
+
 Replayed events (all held out of model training): Guadalupe River at Hunt and at Kerrville (July 4 2025), W Fork San Jacinto near Humble and Buffalo Bayou near Addicks (Harvey 2017). Depth at "your spot" = river rise minus the ground height you set (default 20 ft above normal river level). It is an illustration, not a forecast for an address.
 
 ## Using the trained models
