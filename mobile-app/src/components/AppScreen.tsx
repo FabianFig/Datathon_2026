@@ -1036,7 +1036,7 @@ const s = StyleSheet.create({
 
   // Top Bar
   topbar: {
-    minHeight: 64,
+    minHeight: 52,
     paddingHorizontal: 18,
     flexDirection: 'row',
     alignItems: 'center',

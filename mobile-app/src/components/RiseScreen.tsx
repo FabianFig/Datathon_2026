@@ -65,6 +65,7 @@ const K = {
 
 type Source = 'observed' | 'forecast';
 const LEADS = [1, 3, 6];
+const SPEEDS = [0.5, 1, 2, 4]; // 1x plays the whole event in about 20 s
 const SETTINGS_KEY = 'rise.calibration.v1';
 const DEFAULTS = { eyeM: 1.4, fovDeg: 69, pitchOffset: 0, groundFt: 20 };
 
@@ -357,7 +358,7 @@ function Timeline({
   onSeek: (t: number) => void;
 }) {
   const [w, setW] = useState(300);
-  const H = 92;
+  const H = 64;
   const n = Math.max(1, sc.hours.length - 1);
   const vals = [...observed, ...(forecast ?? [])].filter((v): v is number => v != null);
   const lo = Math.min(...vals, sc.baseline_ft);
@@ -435,6 +436,9 @@ export function RiseScreen() {
   const [view, setView] = useState<'camera' | 'diagram'>('diagram');
   const [measuring, setMeasuring] = useState(false);
   const [showCal, setShowCal] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [speedIdx, setSpeedIdx] = useState(1);
   const [layout, setLayout] = useState({ W: 1, H: 1 });
   const [flow, setFlow] = useState(0);
   const [camIssue, setCamIssue] = useState<'denied' | 'error' | null>(null);
@@ -499,16 +503,17 @@ export function RiseScreen() {
   const fcCars = forecastSeries ? crossing(forecastSeries, sc, groundFt, 1) : null;
 
   // Playback: whole event in ~20 s
+  const speed = SPEEDS[speedIdx];
   const atEnd = t >= n;
   const isPlaying = playing && !atEnd;
   useEffect(() => {
     if (!isPlaying) return;
     const id = setInterval(() => {
-      setT(prev => Math.min(n, prev + n / 400));
+      setT(prev => Math.min(n, prev + (n / 400) * speed));
       setFlow(v => (v + 0.08) % 6);
     }, 50);
     return () => clearInterval(id);
-  }, [isPlaying, n]);
+  }, [isPlaying, n, speed]);
 
   // Pause when the app goes to the background
   useEffect(() => {
@@ -682,22 +687,79 @@ export function RiseScreen() {
       </View>
 
       {/* --------------------------------------------------- controls */}
-      <ScrollView style={st.panel} contentContainerStyle={st.panelContent}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.chips}>
-          {scenarios.map((s, i) => (
-            <Pressable
-              key={s.id}
-              onPress={() => pickScenario(i)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: i === scIdx }}
-              style={[st.chip, i === scIdx && st.chipActive]}
-            >
-              <Text style={[st.chipTitle, i === scIdx && st.chipTitleActive]}>{s.title}</Text>
-              <Text style={[st.chipSub, i === scIdx && st.chipSubActive]}>{s.event}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+      <ScrollView style={[st.panel, (showMore || pickerOpen) && st.panelOpen]} contentContainerStyle={st.panelContent}>
+        {/* row 1: event picker, speed, more */}
+        <View style={st.row}>
+          <Pressable
+            onPress={() => setPickerOpen(o => !o)}
+            accessibilityRole="button"
+            accessibilityLabel={`Flood event: ${sc.title}, ${sc.event}. Tap to change.`}
+            accessibilityState={{ expanded: pickerOpen }}
+            style={[st.picker, pickerOpen && st.pickerOpen]}
+          >
+            <Text style={st.pickerTitle} numberOfLines={1}>
+              {sc.title}
+            </Text>
+            <Text style={st.pickerSub} numberOfLines={1}>
+              {sc.event} {pickerOpen ? '▴' : '▾'}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setSpeedIdx(i => (i + 1) % SPEEDS.length)}
+            accessibilityRole="button"
+            accessibilityLabel={`Playback speed ${SPEEDS[speedIdx]} times. Tap to change.`}
+            style={st.iconBtn}
+          >
+            <Text style={st.iconBtnText}>{SPEEDS[speedIdx]}×</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setShowMore(m => !m)}
+            accessibilityRole="button"
+            accessibilityLabel={showMore ? 'Hide details' : 'Show details, settings and photos'}
+            accessibilityState={{ expanded: showMore }}
+            style={[st.iconBtn, showMore && st.iconBtnActive]}
+          >
+            <Text style={[st.iconBtnText, showMore && st.iconBtnTextActive]}>{showMore ? 'Less' : 'More'}</Text>
+          </Pressable>
+        </View>
 
+        {pickerOpen && (
+          <View style={st.pickerList} accessibilityRole="radiogroup">
+            {scenarios.map((s, i) => (
+              <Pressable
+                key={s.id}
+                onPress={() => {
+                  pickScenario(i);
+                  setPickerOpen(false);
+                }}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: i === scIdx }}
+                style={[st.pickerItem, i === scIdx && st.pickerItemActive]}
+              >
+                <Text style={[st.pickerTitle, i === scIdx && st.chipTitleActive]}>{s.title}</Text>
+                <Text style={st.pickerSub}>
+                  {s.event} · river rose {Math.round(s.peak_ft - s.baseline_ft)} ft
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        <Timeline
+          sc={sc}
+          observed={observed}
+          forecast={effectiveSource === 'forecast' ? forecastSeries : null}
+          t={t}
+          groundFt={groundFt}
+          marks={marks.filter(m => m.ft === 1 || m.ft === 5.7).map(m => ({ hour: m.hour, label: m.short }))}
+          depth={depth}
+          onSeek={v => {
+            setPlaying(false);
+            setT(v);
+          }}
+        />
+
+        {/* row 2: play + view */}
         <View style={st.row}>
           <Pressable
             onPress={() => {
@@ -716,7 +778,7 @@ export function RiseScreen() {
             <Text style={st.playText}>{isPlaying ? 'Pause' : atEnd ? 'Replay' : 'Play'}</Text>
           </Pressable>
           <Pressable onPress={toggleView} accessibilityRole="button" style={st.secondary}>
-            <Text style={st.secondaryText}>{view === 'camera' ? 'Side view' : 'Use camera'}</Text>
+            <Text style={st.secondaryText}>{view === 'camera' ? 'Side view' : 'Camera'}</Text>
           </Pressable>
           {cameraOn && (
             <Pressable
@@ -749,20 +811,8 @@ export function RiseScreen() {
           </View>
         )}
 
-        <Timeline
-          sc={sc}
-          observed={observed}
-          forecast={effectiveSource === 'forecast' ? forecastSeries : null}
-          t={t}
-          groundFt={groundFt}
-          marks={marks.filter(m => m.ft === 1 || m.ft === 5.7).map(m => ({ hour: m.hour, label: m.short }))}
-          depth={depth}
-          onSeek={v => {
-            setPlaying(false);
-            setT(v);
-          }}
-        />
-
+        {showMore && (
+          <>
         {/* key numbers */}
         <View style={st.facts}>
           <Fact
@@ -876,13 +926,15 @@ export function RiseScreen() {
             </ScrollView>
           </>
         )}
-        <PhotoViewer photos={sc.images} index={viewerIndex} onIndex={setViewerIndex} onClose={() => setViewerIndex(null)} />
 
         <Text style={st.noteSmall}>
           {sc.gauge_name} (USGS {sc.gauge_id.replace('USGS-', '')}). Depth at your spot is estimated from the river’s rise and the
           ground height you set. It is not a forecast for your address.
         </Text>
+          </>
+        )}
       </ScrollView>
+      <PhotoViewer photos={sc.images} index={viewerIndex} onIndex={setViewerIndex} onClose={() => setViewerIndex(null)} />
     </View>
   );
 }
@@ -946,8 +998,20 @@ const st = StyleSheet.create({
   gaugeNote: { position: 'absolute', width: 80, textAlign: 'right', color: '#FFFFFF', fontSize: 11, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 3 },
   lostBanner: { position: 'absolute', bottom: 12, left: 12, right: 12, backgroundColor: K.red, borderRadius: 8, padding: 10 },
   lostText: { fontSize: 14, color: K.white, textAlign: 'center', fontWeight: '600' },
-  panel: { flexGrow: 0, maxHeight: '52%', backgroundColor: K.white, borderTopWidth: 1, borderTopColor: K.border },
-  panelContent: { padding: 16, gap: 12, paddingBottom: 28 },
+  panel: { flexGrow: 0, maxHeight: '42%', backgroundColor: K.white, borderTopWidth: 1, borderTopColor: K.border },
+  panelOpen: { maxHeight: '62%' },
+  panelContent: { paddingHorizontal: 14, paddingTop: 10, gap: 10, paddingBottom: 14 },
+  picker: { flex: 1, minHeight: 44, borderWidth: 1, borderColor: K.borderStrong, borderRadius: 8, paddingHorizontal: 12, justifyContent: 'center' },
+  pickerOpen: { borderColor: K.green },
+  pickerTitle: { fontSize: 15, fontWeight: '600', color: K.ink },
+  pickerSub: { fontSize: 12, color: K.muted },
+  pickerList: { borderWidth: 1, borderColor: K.border, borderRadius: 8, overflow: 'hidden' },
+  pickerItem: { minHeight: 52, paddingHorizontal: 12, paddingVertical: 8, justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: K.border },
+  pickerItemActive: { backgroundColor: K.greenLight },
+  iconBtn: { minWidth: 56, minHeight: 44, borderRadius: 8, borderWidth: 1, borderColor: K.borderStrong, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+  iconBtnActive: { backgroundColor: K.green, borderColor: K.green },
+  iconBtnText: { fontSize: 15, fontWeight: '700', color: K.ink, fontVariant: ['tabular-nums'] },
+  iconBtnTextActive: { color: K.white },
   chips: { gap: 8 },
   chip: { borderWidth: 1, borderColor: K.border, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, minHeight: 48, justifyContent: 'center' },
   chipActive: { borderColor: K.green, backgroundColor: K.greenLight },
@@ -956,9 +1020,9 @@ const st = StyleSheet.create({
   chipSub: { fontSize: 12, color: K.muted },
   chipSubActive: { color: K.green },
   row: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  play: { minHeight: 48, minWidth: 96, borderRadius: 8, backgroundColor: K.green, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
+  play: { flex: 1, minHeight: 44, minWidth: 96, borderRadius: 8, backgroundColor: K.green, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
   playText: { color: K.white, fontSize: 16, fontWeight: '700' },
-  secondary: { minHeight: 48, borderRadius: 8, borderWidth: 1, borderColor: K.borderStrong, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
+  secondary: { minHeight: 44, borderRadius: 8, borderWidth: 1, borderColor: K.borderStrong, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
   secondaryActive: { backgroundColor: K.green, borderColor: K.green },
   secondaryText: { color: K.ink, fontSize: 15, fontWeight: '600' },
   secondaryTextActive: { color: K.white },
