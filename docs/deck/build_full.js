@@ -4,7 +4,7 @@ const pptxgen = require('pptxgenjs');
 const { applyTheme } = require(path.join(process.env.SKILL_DIR, 'scripts/apply_theme.js'));
 
 const IMG = path.join(__dirname, 'img');
-const OUT = process.argv[2] || path.join(__dirname, 'Waterline.pptx');
+const OUT = process.argv[2] || path.join(__dirname, '..', 'Waterline_Full_Backup.pptx');
 
 // Palette from the app: forest green (dominant), flood-water brown accent
 const THEME = {
