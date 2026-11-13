@@ -37,7 +37,8 @@ import {
   formatDepth,
   formatDuration,
   FT_PER_M,
-  hourOf,
+  stepHours,
+  stepOf,
   localClock,
   model,
   scenarios,
@@ -447,7 +448,7 @@ function Timeline({
       accessibilityLabel="Flood timeline"
       accessibilityValue={{ text: `${clock.day} ${clock.time}. Water ${formatDepth(depth)}.` }}
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
-      onAccessibilityAction={e => onSeek(Math.max(0, Math.min(n, t + (e.nativeEvent.actionName === 'increment' ? 1 : -1))))}
+      onAccessibilityAction={e => onSeek(Math.max(0, Math.min(n, t + (e.nativeEvent.actionName === 'increment' ? 1 : -1) / stepHours(sc))))}
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
       onResponderTerminationRequest={() => false}
@@ -632,7 +633,8 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
   const depth = depthFt(stageAt(driving, t), sc, groundFt);
   const depthM = depth / FT_PER_M;
   const clock = localClock(sc, t);
-  const lostAt = hourOf(sc, sc.gauge_lost_at);
+  const lostAt = stepOf(sc, sc.gauge_lost_at);
+  const sh = stepHours(sc); // hours per step
   const gaugeLost = lostAt != null && t >= lostAt;
 
   // Threshold crossings for the selected curve
@@ -667,7 +669,8 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
     const id = setInterval(() => {
       setT(prev => {
         const { driving: d, sc: s, groundFt: g } = playRef.current;
-        const rate = Math.abs(depthFt(stageAt(d, prev + 0.5), s, g) - depthFt(stageAt(d, Math.max(0, prev - 0.5)), s, g)); // ft per hour
+        const half = 0.5 / stepHours(s); // half an hour, in steps
+        const rate = Math.abs(depthFt(stageAt(d, prev + half), s, g) - depthFt(stageAt(d, Math.max(0, prev - half)), s, g)); // ft per hour
         const slow = Math.min(5, 1 + rate / 3);
         return Math.min(n, prev + ((n / 700) * speed) / slow); // ~35 s for a quiet event
       });
@@ -866,7 +869,7 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
           <View style={[st.timeCard, cameraOn ? { left: 10, bottom: banner ? 64 : 10 } : { right: 10, top: 10 }]} pointerEvents="none" accessible accessibilityLabel={`${clock.day}, ${clock.time}`}>
             <Text style={st.timeBig}>{clock.time}</Text>
             <Text style={st.timeSub}>
-              {clock.day} · {t < 0.05 ? 'start' : `+${formatDuration(t)}`}
+              {clock.day} · {t * sh < 0.05 ? 'start' : `+${formatDuration(t * sh)}`}
             </Text>
           </View>
         )}
@@ -1038,11 +1041,11 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
         <View style={st.facts}>
           <Fact
             label="Dry ground to cars floating"
-            value={firstWet != null && carsFloat != null ? formatDuration(carsFloat - firstWet) : '—'}
+            value={firstWet != null && carsFloat != null ? formatDuration((carsFloat - firstWet) * sh) : '—'}
           />
           <Fact
             label="Dry ground to over your head"
-            value={firstWet != null && overHead != null ? formatDuration(overHead - firstWet) : 'Not reached'}
+            value={firstWet != null && overHead != null ? formatDuration((overHead - firstWet) * sh) : 'Not reached'}
           />
           <Fact label="River rise" value={`${Math.round(sc.peak_ft - sc.baseline_ft)} ft`} />
         </View>
@@ -1070,7 +1073,7 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
               {model.future_rain_assumed ? ' plus the rain that followed (as a rainfall forecast would supply)' : ''}. This event was
               held out of training.
               {obsCars != null && fcCars != null
-                ? ` It forecast cars floating ${formatDuration(Math.abs(obsCars - fcCars))} ${fcCars <= obsCars ? 'before' : 'after'} it happened.`
+                ? ` It forecast cars floating ${formatDuration(Math.abs(obsCars - fcCars) * sh)} ${fcCars <= obsCars ? 'before' : 'after'} it happened.`
                 : ''}
             </Text>
           </>

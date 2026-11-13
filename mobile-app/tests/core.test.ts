@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createYawTracker, distanceFromTap, focalPx, offsetForDepression, poseFromUp } from '../src/lib/arGeometry';
-import { crossing, depthFt, formatDepth, localClock, scenarios, series, stageAt, THRESHOLDS } from '../src/lib/flood';
+import { crossing, depthFt, formatDepth, localClock, scenarios, series, stageAt, stepHours, THRESHOLDS } from '../src/lib/flood';
 import { hash } from '../src/lib/labels';
 
 test('scenarios are well formed', () => {
@@ -36,6 +36,16 @@ test('depth and threshold crossings agree', () => {
   assert.ok(Math.abs(depthFt(stageAt(sc.stage_ft, knee!), sc, ground) - 1.7) < 0.05);
   assert.equal(depthFt(null, sc, ground), 0);
   assert.ok(THRESHOLDS.every((th, i) => i === 0 || th.ft > THRESHOLDS[i - 1].ft));
+});
+
+test('replay clock matches the real USGS readings', () => {
+  // Kerrville peaked at 34.29 ft at 6:30 AM CDT on Jul 4 2025 (USGS 08166200)
+  const k = scenarios.find(s => s.id === 'kerrville_2025')!;
+  assert.equal(stepHours(k), 0.25);
+  const v = k.stage_ft;
+  const peak = v.reduce((m, x, i) => (x != null && x > (v[m] ?? -1) ? i : m), 0);
+  assert.equal(v[peak], 34.29);
+  assert.equal(localClock(k, peak).time, '6:30 AM');
 });
 
 test('formatting', () => {
