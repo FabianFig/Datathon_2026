@@ -413,7 +413,7 @@ function Timeline({
   onSeek: (t: number) => void;
 }) {
   const [w, setW] = useState(300);
-  const H = 52;
+  const H = 60;
   const n = Math.max(1, sc.hours.length - 1);
   const vals = [...observed, ...(forecast ?? [])].filter((v): v is number => v != null);
   const lo = Math.min(...vals, sc.baseline_ft);
@@ -456,6 +456,8 @@ function Timeline({
     >
       <Svg width={w} height={H} pointerEvents="none">
         <Rect x={0} y={groundY} width={w} height={H - groundY} fill="#EEF2EE" />
+        {/* elapsed part of the event */}
+        <Rect x={0} y={0} width={Math.max(0, x(t))} height={H} fill={K.green} opacity={0.1} />
         <Line x1={0} x2={w} y1={groundY} y2={groundY} stroke={K.borderStrong} strokeDasharray="4 4" />
         {marks.map(m => (
           <Line key={m.label} x1={x(m.hour)} x2={x(m.hour)} y1={0} y2={H} stroke={K.red} strokeWidth={1} opacity={0.5} />
@@ -857,10 +859,17 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
             {level ? level.label : 'Ground is still dry'}
             {spot ? ' · at your spot' : ''}
           </Text>
-          <Text style={st.hudClock}>
-            {clock.time} · {clock.day}
-          </Text>
         </View>
+
+        {/* Big replay clock, so the passing hours are obvious */}
+        {!measuring && (
+          <View style={[st.timeCard, cameraOn ? { left: 10, bottom: banner ? 64 : 10 } : { right: 10, top: 10 }]} pointerEvents="none" accessible accessibilityLabel={`${clock.day}, ${clock.time}`}>
+            <Text style={st.timeBig}>{clock.time}</Text>
+            <Text style={st.timeSub}>
+              {clock.day} · {t < 0.05 ? 'start' : `+${formatDuration(t)}`}
+            </Text>
+          </View>
+        )}
 
         {cameraOn && (
           <View style={st.floatCol}>
@@ -1257,7 +1266,9 @@ const st = StyleSheet.create({
   warnText: { fontSize: 13, color: K.amber, textAlign: 'center', fontWeight: '600' },
   scaleLabel: { position: 'absolute', color: 'rgba(255,255,255,0.92)', fontSize: 11, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 2 },
   hudCard: { position: 'absolute', top: 10, left: 10, maxWidth: '62%', backgroundColor: 'rgba(255,255,255,0.94)', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 11, borderWidth: 1, borderColor: K.border },
-  hudClock: { fontSize: 12, color: K.muted, marginTop: 3, fontVariant: ['tabular-nums'] },
+  timeCard: { position: 'absolute', backgroundColor: 'rgba(17,24,21,0.82)', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 14 },
+  timeBig: { fontSize: 30, fontWeight: '700', color: '#FFFFFF', fontVariant: ['tabular-nums'], letterSpacing: -0.5 },
+  timeSub: { fontSize: 13, fontWeight: '600', color: '#D3DCD6', marginTop: 1, fontVariant: ['tabular-nums'] },
   floatCol: { position: 'absolute', top: 10, right: 10, gap: 8, alignItems: 'flex-end' },
   floatBtn: { minHeight: 40, minWidth: 64, paddingHorizontal: 14, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.94)', alignItems: 'center', justifyContent: 'center' },
   floatBtnPrimary: { backgroundColor: K.green },
