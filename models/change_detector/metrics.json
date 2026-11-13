@@ -1,0 +1,29 @@
+{
+  "trained_at": "2026-11-13T19:52:39+00:00",
+  "method": "self-supervised camera translator on frozen ResNet-50 layer3 features; score = mean of top-10% unexplained patches",
+  "pairs": 575,
+  "folds": 5,
+  "epochs": 30,
+  "image_size": 512,
+  "quick": false,
+  "checks": {
+    "learned": {
+      "true_vs_shuffled_auc": 0.9771795841209829,
+      "median_typical_patch_change": 0.13350465893745422,
+      "contrast_top_vs_typical": 1.7005465030670166,
+      "spearman_rain_3d": -0.3965487320431017,
+      "spearman_gauge_rise": 0.11629664036022726,
+      "spearman_fema_flood_zone": -0.12735601822583437,
+      "spearman_high_water_mark_distance": -0.08965107199992603
+    },
+    "naive": {
+      "true_vs_shuffled_auc": 0.9721814744801512,
+      "median_typical_patch_change": 0.2506553828716278,
+      "contrast_top_vs_typical": 1.4695703983306885,
+      "spearman_rain_3d": -0.2827600397962502,
+      "spearman_gauge_rise": 0.27324438277581425,
+      "spearman_fema_flood_zone": 0.2314841357627683,
+      "spearman_high_water_mark_distance": 0.04830503054394456
+    }
+  }
+}
