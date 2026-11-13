@@ -3,7 +3,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useIsFocused } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { DeviceMotion } from 'expo-sensors';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   AppState,
@@ -21,7 +21,9 @@ import { PhotoViewer } from './PhotoViewer';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import {
   distanceFromTap,
+  createYawTracker,
   focalPx,
+  offsetForBearing,
   offsetForDepression,
   poseFromUp,
   type Pose,
@@ -69,11 +71,28 @@ const SPEEDS = [0.5, 1, 2, 4]; // 1x plays the whole event in about 20 s
 const SETTINGS_KEY = 'rise.calibration.v1';
 const DEFAULTS = { eyeM: 1.4, fovDeg: 69, pitchOffset: 0, groundFt: 20 };
 
+// --------------------------------------------------------------------------- camera
+/** Live preview, memoised so 50 Hz sensor updates never re-render the camera. */
+const LiveCamera = memo(function LiveCamera({ onError }: { onError: () => void }) {
+  return <CameraView style={StyleSheet.absoluteFill} facing="back" animateShutter={false} onMountError={onError} />;
+});
+
 // --------------------------------------------------------------------------- sensors
 type SensorStatus = 'off' | 'starting' | 'ok' | 'unavailable' | 'denied';
 
-function usePose(enabled: boolean, pitchOffset: number): { pose: Pose; status: SensorStatus } {
+type Motion = { pose: Pose; yaw: number; status: SensorStatus; moving: boolean; moveCount: number };
+
+/**
+ * Phone orientation for the AR view: pitch and roll from gravity, yaw (turning)
+ * from the gyroscope, and a flag when the person is walking (position can't be
+ * tracked without ARKit/ARCore, so we ask them to re-aim instead).
+ */
+function usePose(enabled: boolean, pitchOffset: number): Motion {
   const [pose, setPose] = useState<Pose>({ pitch: 0, roll: 0 });
+  const [yaw, setYaw] = useState(0);
+  const [moving, setMoving] = useState(false);
+  const [moveCount, setMoveCount] = useState(0);
+  const tracker = useRef(createYawTracker());
   const [status, setStatus] = useState<SensorStatus>('off');
   const up = useRef<Vec3 | null>(null);
   const sign = useRef<number>(1);
@@ -83,7 +102,10 @@ function usePose(enabled: boolean, pitchOffset: number): { pose: Pose; status: S
     if (!enabled) return;
     let sub: { remove: () => void } | null = null;
     let cancelled = false;
-    let last: Pose | null = null;
+    let last: { pitch: number; roll: number; yaw: number } | null = null;
+    let lastT = 0;
+    let accEnergy = 0;
+    let movingNow = false;
     (async () => {
       setStatus('starting');
       try {
@@ -102,7 +124,7 @@ function usePose(enabled: boolean, pitchOffset: number): { pose: Pose; status: S
         if (!cancelled) setStatus('unavailable');
         return;
       }
-      DeviceMotion.setUpdateInterval(33);
+      DeviceMotion.setUpdateInterval(20);
       setStatus('ok');
       sub = DeviceMotion.addListener(m => {
         const g = m.accelerationIncludingGravity;
@@ -110,7 +132,8 @@ function usePose(enabled: boolean, pitchOffset: number): { pose: Pose; status: S
         // Platforms disagree on whether this reports gravity or its reaction.
         // People hold the phone upright in portrait, so lock the sign from the
         // first clearly-upright reading and treat the result as world-up.
-        if (!signLocked.current && Math.abs(g.y) > 7) {
+        const gn = Math.hypot(g.x, g.y, g.z) || 1;
+        if (!signLocked.current && Math.abs(g.y) > 0.75 * gn) {
           sign.current = g.y > 0 ? 1 : -1;
           signLocked.current = true;
         }
@@ -121,20 +144,45 @@ function usePose(enabled: boolean, pitchOffset: number): { pose: Pose; status: S
         const next = { x: prev.x + a * (raw.x - prev.x), y: prev.y + a * (raw.y - prev.y), z: prev.z + a * (raw.z - prev.z) };
         up.current = next;
         const p = poseFromUp(next, pitchOffset);
+
+        const now = Date.now();
+        const dt = lastT ? (now - lastT) / 1000 : 0;
+        lastT = now;
+        const rr = m.rotationRate;
+        const y =
+          rr && Number.isFinite(rr.alpha) && Number.isFinite(rr.beta) && Number.isFinite(rr.gamma)
+            ? tracker.current.update(next, { x: s * rr.beta, y: s * rr.gamma, z: s * rr.alpha }, p, dt)
+            : tracker.current.yaw;
+
+        // Walking shows up as sustained linear acceleration
+        const acc = m.acceleration;
+        if (acc && dt > 0) {
+          const mag2 = acc.x * acc.x + acc.y * acc.y + acc.z * acc.z;
+          accEnergy += (mag2 - accEnergy) * Math.min(1, dt / 1.2);
+          const isMoving = accEnergy > 0.8;
+          if (isMoving !== movingNow) {
+            movingNow = isMoving;
+            setMoving(isMoving);
+            if (isMoving) setMoveCount(c => c + 1);
+          }
+        }
+
         // Skip re-renders for sub-0.1 degree jitter
-        if (last && Math.abs(p.pitch - last.pitch) < 0.002 && Math.abs(p.roll - last.roll) < 0.002) return;
-        last = p;
+        if (last && Math.abs(p.pitch - last.pitch) < 0.002 && Math.abs(p.roll - last.roll) < 0.002 && Math.abs(y - last.yaw) < 0.002) return;
+        last = { ...p, yaw: y };
         setPose(p);
+        setYaw(y);
       });
     })();
     return () => {
       cancelled = true;
       sub?.remove();
       setStatus('off');
+      setMoving(false);
     };
   }, [enabled, pitchOffset]);
 
-  return { pose, status };
+  return { pose, yaw, status, moving, moveCount };
 }
 
 // --------------------------------------------------------------------------- AR overlay
@@ -155,6 +203,7 @@ function WaterOverlay({
   distM,
   depthM,
   flow,
+  spotOffsetX,
 }: {
   W: number;
   H: number;
@@ -164,6 +213,7 @@ function WaterOverlay({
   distM: number;
   depthM: number;
   flow: number;
+  spotOffsetX: number | null;
 }) {
   const f = focalPx(W, H, fovDeg);
   const L = 2 * Math.hypot(W, H);
@@ -226,6 +276,21 @@ function WaterOverlay({
           </>
         )}
 
+        {/* the placed spot, pinned to the ground: it moves as you tilt and turn */}
+        {spotOffsetX != null && (
+          <View
+            style={{
+              position: 'absolute',
+              left: mid + spotOffsetX - 18,
+              top: mid + groundY - 5,
+              width: 36,
+              height: 10,
+              borderRadius: 18,
+              borderWidth: 2,
+              borderColor: 'rgba(255,255,255,0.85)',
+            }}
+          />
+        )}
       </View>
     </View>
   );
@@ -426,7 +491,10 @@ export function RiseScreen() {
   // Tabs stay mounted; release the camera and pause when another tab is showing
   const focused = useIsFocused();
   const cameraOn = view === 'camera' && !!permission?.granted && focused;
-  const { pose, status: sensorStatus } = usePose(cameraOn, pitchOffset);
+  const { pose, yaw, status: sensorStatus, moving, moveCount } = usePose(cameraOn, pitchOffset);
+  const [spotYaw, setSpotYaw] = useState(0);
+  const [lockMoveCount, setLockMoveCount] = useState(0);
+  const movedSinceLock = spotSet && moveCount > lockMoveCount;
 
   // Remember calibration between visits (falls back to defaults if storage fails)
   useEffect(() => {
@@ -518,6 +586,11 @@ export function RiseScreen() {
     lastLevel.current = idx;
   }, [level, depth]);
 
+  const onCameraError = useCallback(() => {
+    setView('diagram');
+    setCamIssue('error');
+  }, []);
+
   async function toggleView() {
     if (view === 'camera') {
       setView('diagram');
@@ -554,6 +627,8 @@ export function RiseScreen() {
     }
     setTapHint('');
     setDistM(Math.round(d * 10) / 10);
+    setSpotYaw(yaw);
+    setLockMoveCount(moveCount);
     setSpotSet(true);
     setMeasuring(false);
     setFlash(`Spot set ${Math.round(d * FT_PER_M)} ft away`);
@@ -596,6 +671,10 @@ export function RiseScreen() {
     banner = { tone: 'warn', text: 'Motion access is off, so the water can’t stay level as you tilt. Allow Motion & Fitness in Settings.' };
   } else if (cameraOn && sensorStatus === 'unavailable') {
     banner = { tone: 'warn', text: 'No motion sensor found. Hold the phone upright and pointed straight ahead.' };
+  } else if (cameraOn && moving) {
+    banner = { tone: 'info', text: 'Walking changes the distance. Stop, then tap Re-aim.' };
+  } else if (cameraOn && movedSinceLock) {
+    banner = { tone: 'info', text: 'You moved. Tap Re-aim so the water lines up again.' };
   } else if (cameraOn && sensorStatus === 'ok' && pose.pitch < -1.05) {
     banner = { tone: 'info', text: 'Raise the phone and look toward the spot.' };
   } else if (cameraOn && sensorStatus === 'ok' && pose.pitch > 0.6) {
@@ -615,16 +694,9 @@ export function RiseScreen() {
       >
         {cameraOn ? (
           <View style={StyleSheet.absoluteFill} accessible={!measuring} accessibilityLabel="Camera view with simulated flood water">
-            <CameraView
-              style={StyleSheet.absoluteFill}
-              facing="back"
-              onMountError={() => {
-                setView('diagram');
-                setCamIssue('error');
-              }}
-            />
+            <LiveCamera onError={onCameraError} />
             {layout.W > 1 && (
-              <WaterOverlay W={layout.W} H={layout.H} pose={pose} fovDeg={fovDeg} eyeM={eyeM} distM={shownDist} depthM={depthM} flow={flow} />
+              <WaterOverlay W={layout.W} H={layout.H} pose={pose} fovDeg={fovDeg} eyeM={eyeM} distM={shownDist} depthM={depthM} flow={flow} spotOffsetX={measuring ? 0 : spotSet ? offsetForBearing(spotYaw, yaw, focalPx(layout.W, layout.H, fovDeg)) : null} />
             )}
             {measuring && (
               <View style={st.reticle} pointerEvents="none">
@@ -641,10 +713,10 @@ export function RiseScreen() {
                 onPress={markSpot}
                 disabled={!aimDist}
                 accessibilityRole="button"
-                accessibilityLabel={aimDist ? `Lock the water on the spot ${Math.round(aimDist * FT_PER_M)} feet away` : 'Aim lower to lock a spot'}
+                accessibilityLabel={aimDist ? `Place the water on the spot ${Math.round(aimDist * FT_PER_M)} feet away` : 'Aim lower to lock a spot'}
                 style={[st.lockBtn, !aimDist && st.lockBtnDisabled]}
               >
-                <Text style={st.lockText}>Lock here</Text>
+                <Text style={st.lockText}>Place here</Text>
               </Pressable>
             )}
           </View>
