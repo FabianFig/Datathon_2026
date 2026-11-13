@@ -74,6 +74,7 @@ export type Pair = {
 };
 
 type Tab = 'Rise' | 'Explore' | 'Compare' | 'Settings';
+type FilterMode = 'all' | 'high_priority' | 'most_changed' | 'reviewed';
 
 // Every UTSA before/after pair ships with the app (export_catalog.py), so
 // Expo Go shows the whole dataset without a server. The original sample
@@ -125,8 +126,8 @@ type AppData = {
   setCompareMode: (value: CompareMode) => void;
   query: string;
   setQuery: (value: string) => void;
-  filterMode: 'all' | 'high_priority' | 'reviewed';
-  setFilterMode: (value: 'all' | 'high_priority' | 'reviewed') => void;
+  filterMode: FilterMode;
+  setFilterMode: (value: FilterMode) => void;
   loading: boolean;
   error: string;
   filtered: Pair[];
@@ -151,7 +152,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>('after');
   const [compareMode, setCompareMode] = useState<CompareMode>('split');
   const [query, setQuery] = useState('');
-  const [filterMode, setFilterMode] = useState<'all' | 'high_priority' | 'reviewed'>('all');
+  const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -191,7 +192,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const matchesQuery = !query || searchTarget.includes(query.toLowerCase());
       if (!matchesQuery) return false;
       if (filterMode === 'high_priority') {
-        return p.dossier?.review_priority === 'high' || (p.after_cue?.above_threshold ?? false) || (changeFor(p.after_id)?.percentile ?? 0) >= 90;
+        return p.dossier?.review_priority === 'high' || (p.after_cue?.above_threshold ?? false);
+      }
+      if (filterMode === 'most_changed') {
+        return (changeFor(p.after_id)?.percentile ?? 0) >= 90;
       }
       if (filterMode === 'reviewed') {
         return !!p.review;
@@ -510,6 +514,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
                 [
                   { key: 'all', label: `All Pairs (${pairs.length})` },
                   { key: 'high_priority', label: 'Flagged Evidence' },
+                  { key: 'most_changed', label: 'Most changed' },
                   { key: 'reviewed', label: 'Human Reviewed' },
                 ] as const
               ).map(item => (
@@ -594,9 +599,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
                         </View>
                       )}
                       {(changeFor(item.after_id)?.percentile ?? 0) >= 90 && (
-                        <View style={s.cueAlertPill}>
-                          <Text style={s.cueAlertText}>Top 10% change</Text>
-                        </View>
+                        <Text style={s.rowSourceTag}>Most changed</Text>
                       )}
                       {isReviewed && (
                         <View style={s.reviewedPill}>

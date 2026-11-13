@@ -40,8 +40,8 @@ export function ChangeCard({ afterId, afterUrl }: { afterId: string; afterUrl: s
         #{entry.rank} of {data.model.pairs}
       </Text>
       <Text style={st.body}>
-        {level}. Red areas are changes the model could not explain as a camera difference between 2016 and 2017, such as
-        standing water or debris.
+        {level}. Red areas changed between the 2016 and 2017 photos in ways the model could not explain as a camera
+        difference: new buildings, cleared land, water or debris. Change alone does not show flooding, so check the photos.
       </Text>
       <Pressable
         onPress={() => setShow(v => !v)}
@@ -63,7 +63,7 @@ export function ChangeCard({ afterId, afterUrl }: { afterId: string; afterUrl: s
         )}
       </Pressable>
       <Text style={st.small}>
-        Tap to {show ? 'hide' : 'show'} the heatmap. Self-supervised: trained on all 575 pairs without flood labels, and each
+        Tap to {show ? 'hide' : 'show'} the heatmap. Self-supervised: trained on all 575 pairs without labels, and each
         pair is scored by a model that never saw that area.
       </Text>
     </View>

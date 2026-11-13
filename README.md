@@ -22,7 +22,7 @@ Both models were trained offline, and their results ship with the app as JSON, s
 | Model | Trained on | Output file | Used in the app |
 |---|---|---|---|
 | River-level forecaster (LightGBM) | USAA Datathon Qwen server | `mobile-app/src/data/floodScenarios.json` (forecasts 1–12 h ahead for each replayed hour) | Rise → More → Water level from → Model forecast |
-| Photo change model | Google Colab L4 | `mobile-app/src/data/changeScores.json` (rank + 16×16 heatmap per pair) | Compare card and heatmap; Explore "Top 10% change" badge |
+| Photo change model | Google Colab L4 | `mobile-app/src/data/changeScores.json` (rank + 16×16 heatmap per pair) | Compare card and heatmap; Explore "Most changed" filter and tag |
 
 `mobile_server.py` serves the same results plus a live forecast:
 
@@ -38,6 +38,8 @@ The live forecast needs `pandas numpy lightgbm` on the server (the training envi
 ## ML model 1: photo change detector (`ml/train_change_detector.py`)
 
 Self-supervised, trained on the 575 UTSA Harvey photo pairs with no labels. A frozen ResNet-50 turns each photo into a 16x16 grid of patch features, and a small conv "camera translator" learns to predict the 2017 NOAA photo's features from the 2016 USDA photo's features. Because the camera difference is shared by every pair, the translator learns it; a flood at one location is unique, so it can't. The patches it fails to predict are the change heatmap. Training uses a trimmed loss that ignores the 20% hardest patches so real changes aren't learned away, and 5-fold cross-validation grouped by spatial block, so every pair is scored by a model that never saw that area.
+
+**What it does and doesn't show.** It is a change detector, not a flood detector. Against the naive comparison it halves the typical camera-difference noise (median patch change 0.13 vs 0.25) and raises change contrast (1.70 vs 1.47). But its ranking does not track flood evidence it never saw: rank correlation with 3-day rainfall is −0.39, with FEMA flood zone −0.13, with gauge rise +0.12 (the naive score does better on the last two). Unexplained change includes construction, land clearing, season and lighting as well as water. The app therefore calls it "most changed", keeps it out of the flagged-evidence filter, and asks people to check the photos.
 
 Checks without labels, each compared with naive before/after feature distance: true-vs-shuffled-pair AUC, change contrast (top patches vs typical patch), and rank correlation with evidence the model never sees: 3-day rainfall, gauge rise between the two dates, FEMA flood zone and distance to a surveyed high-water mark. The app's Compare screen shows each pair's rank and heatmap, and the Explore "high priority" filter includes the top 10%.
 
