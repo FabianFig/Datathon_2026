@@ -88,7 +88,21 @@ function likelyFlooded(afterId: string): boolean {
 // Expo Go shows the whole dataset without a server. The original sample
 // pairs keep their richer model notes.
 const sampleByAfter = new Map((samplePairs as unknown as Pair[]).map(p => [p.after_id, p]));
-const bundledPairs: Pair[] = (catalogRaw as unknown as Pair[]).map(p => ({ ...sampleByAfter.get(p.after_id), ...p }));
+/**
+ * Best examples first: photos the flood classifier is most confident show
+ * floodwater, then by the floodwater colour score (the more accurate heatmap),
+ * so Compare and Explore open on clear, well-mapped floods.
+ */
+function rankPairs(list: Pair[]): Pair[] {
+  const key = (p: Pair) => [floodFor(p.after_id)?.prob ?? -1, waterFor(p.after_id)?.score ?? -1];
+  return [...list].sort((a, b) => {
+    const [fa, wa] = key(a);
+    const [fb, wb] = key(b);
+    return fb - fa || wb - wa;
+  });
+}
+
+const bundledPairs: Pair[] = rankPairs((catalogRaw as unknown as Pair[]).map(p => ({ ...sampleByAfter.get(p.after_id), ...p })));
 type Phase = 'before' | 'after';
 type CompareMode = 'split' | 'toggle' | 'sideBySide';
 
@@ -177,7 +191,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!response.ok) throw Error(`Server returned ${response.status}`);
       const data: Pair[] = await response.json();
       if (!Array.isArray(data)) throw Error('Unexpected dataset response structure');
-      setPairs(data);
+      setPairs(rankPairs(data));
       setSelected(0);
       if (!data.length) setError('No before/after image pairs were found in catalog.');
     } catch (cause) {
@@ -661,8 +675,31 @@ export function AppScreen({ tab }: { tab: Tab }) {
       {tab === 'Compare' && (
         <ScrollView style={s.screen} contentContainerStyle={s.content}>
           <View style={s.headerBlock}>
-            <View style={s.locationTag}>
-              <Text style={s.locationTagText}>PAIR #{pair.index + 1}</Text>
+            {/* Step through pairs, best flood examples first */}
+            <View style={s.stepRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Previous example"
+                disabled={selected <= 0}
+                onPress={() => setSelected(Math.max(0, selected - 1))}
+                style={[s.stepBtn, selected <= 0 && { opacity: 0.35 }]}
+                hitSlop={6}
+              >
+                <Text style={s.stepBtnText}>‹</Text>
+              </Pressable>
+              <Text style={s.stepText} accessibilityLiveRegion="polite">
+                Example {Math.max(0, pairs.indexOf(pair)) + 1} of {pairs.length} · best first
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Next example"
+                disabled={selected >= pairs.length - 1}
+                onPress={() => setSelected(Math.min(pairs.length - 1, selected + 1))}
+                style={[s.stepBtn, selected >= pairs.length - 1 && { opacity: 0.35 }]}
+                hitSlop={6}
+              >
+                <Text style={s.stepBtnText}>›</Text>
+              </Pressable>
             </View>
             <Text style={s.heading} accessibilityRole="header">
               {pair.locality}
@@ -1247,6 +1284,10 @@ const s = StyleSheet.create({
   footerNotice: { textAlign: 'center', fontSize: 12, color: C.muted, paddingVertical: 10 },
 
   // Compare Tab Styles
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  stepBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center', backgroundColor: C.white },
+  stepBtnText: { fontSize: 22, fontWeight: '600', color: C.ink, marginTop: -2 },
+  stepText: { flex: 1, fontSize: 13, fontWeight: '600', color: C.muted, textAlign: 'center', fontVariant: ['tabular-nums'] },
   locationTag: {
     alignSelf: 'flex-start',
     backgroundColor: C.greenLight,
