@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { DeviceMotion } from 'expo-sensors';
@@ -15,6 +16,7 @@ import {
   type GestureResponderEvent,
   type LayoutChangeEvent,
 } from 'react-native';
+import { PhotoViewer } from './PhotoViewer';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import {
   distanceFromTap,
@@ -63,6 +65,8 @@ const K = {
 
 type Source = 'observed' | 'forecast';
 const LEADS = [1, 3, 6];
+const SETTINGS_KEY = 'rise.calibration.v1';
+const DEFAULTS = { eyeM: 1.4, fovDeg: 69, pitchOffset: 0, groundFt: 20 };
 
 // --------------------------------------------------------------------------- sensors
 type SensorStatus = 'off' | 'starting' | 'ok' | 'unavailable' | 'denied';
@@ -133,6 +137,15 @@ function usePose(enabled: boolean, pitchOffset: number): { pose: Pose; status: S
 }
 
 // --------------------------------------------------------------------------- AR overlay
+const FT = 0.3048;
+const GAUGE_FT = 7;
+
+/**
+ * Water drawn as a horizontal plane at depth `depthM`, plus a staff gauge (the
+ * white measuring post you see at real low-water crossings) standing on the
+ * spot the user tapped. Everything sits in one layer rotated by the phone's
+ * roll, so the waterline stays level with the real horizon.
+ */
 function WaterOverlay({
   W,
   H,
@@ -140,6 +153,8 @@ function WaterOverlay({
   fovDeg,
   eyeM,
   distM,
+  spotX,
+  spotSet,
   depthM,
   flow,
 }: {
@@ -149,25 +164,41 @@ function WaterOverlay({
   fovDeg: number;
   eyeM: number;
   distM: number;
+  spotX: number;
+  spotSet: boolean;
   depthM: number;
   flow: number;
 }) {
   const f = focalPx(W, H, fovDeg);
   const L = 2 * Math.hypot(W, H);
   const mid = L / 2;
-  const groundY = offsetForDepression(Math.atan(eyeM / distM), pose, f);
+  const yAt = (heightM: number, d = distM) => offsetForDepression(Math.atan2(eyeM - heightM, d), pose, f);
+  const groundY = yAt(0);
+  const wet = depthM > 0.01;
   const over = depthM >= eyeM - 0.02;
-  const waterY = over ? -L : offsetForDepression(Math.atan((eyeM - depthM) / distM), pose, f);
+  const waterY = over ? -L : yAt(depthM);
 
-  // Ripple lines at nearer distances, drifting toward the viewer.
-  const ripples: number[] = [];
-  if (depthM > 0.02 && !over) {
-    for (let k = 0; k < 6; k++) {
-      const frac = ((k + flow) % 6) / 6; // 0..1
-      const d = distM * (0.25 + 0.7 * (1 - frac));
-      ripples.push(offsetForDepression(Math.atan((eyeM - depthM) / d), pose, f));
+  // Perspective ripples between the viewer and the spot, drifting toward the viewer.
+  const ripples: { y: number; a: number }[] = [];
+  if (wet && !over) {
+    for (let k = 0; k < 7; k++) {
+      const frac = ((k + flow) % 7) / 7;
+      const d = distM * (0.2 + 0.78 * (1 - frac));
+      ripples.push({ y: yAt(depthM, d), a: 0.14 + 0.22 * frac });
     }
   }
+
+  // Staff gauge: 7 ft post at the spot, one band per half foot.
+  const postW = Math.max(8, Math.min(26, (f * 0.12) / distM));
+  const postX = mid + spotX;
+  const bands = [];
+  for (let k = 0; k < GAUGE_FT * 2; k++) {
+    const y0 = yAt((k + 1) * 0.5 * FT);
+    const y1 = yAt(k * 0.5 * FT);
+    bands.push({ top: mid + y0, h: Math.max(1, y1 - y0), dark: k % 2 === 1 });
+  }
+  const labels = [1, 2, 3, 4, 5, 6, 7].map(ft => ({ ft, y: mid + yAt(ft * FT) }));
+  const headY = mid + yAt(5.7 * FT);
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -181,21 +212,43 @@ function WaterOverlay({
           transform: [{ rotate: `${pose.roll}rad` }],
         }}
       >
-        {depthM > 0.02 && (
+        {/* staff gauge, drawn first so the water covers its lower part */}
+        <View style={{ position: 'absolute', left: postX - postW / 2 - 2, width: postW + 4, top: labels[6].y - 2, height: mid + groundY - labels[6].y + 2, backgroundColor: 'rgba(17,24,21,0.55)', borderRadius: 3 }} />
+        {bands.map((b, k) => (
+          <View key={k} style={{ position: 'absolute', left: postX - postW / 2, width: postW, top: b.top, height: b.h, backgroundColor: b.dark ? '#1F2924' : '#F6F7F2' }} />
+        ))}
+        {labels.map(l => (
+          <Text key={l.ft} style={[st.gaugeLabel, { left: postX + postW / 2 + 6, top: l.y - 9 }]}>
+            {l.ft}
+          </Text>
+        ))}
+        <View style={{ position: 'absolute', left: postX - postW / 2 - 10, width: postW + 20, top: headY - 1, height: 2, backgroundColor: '#DC2626' }} />
+        <Text style={[st.gaugeNote, { left: postX - postW / 2 - 92, top: headY - 9 }]}>adult head</Text>
+
+        {wet && (
           <>
             <View style={{ position: 'absolute', left: 0, right: 0, top: mid + waterY, bottom: 0, backgroundColor: K.water }} />
-            {!over && <View style={{ position: 'absolute', left: 0, right: 0, top: mid + waterY - 1, height: 2.5, backgroundColor: K.surface }} />}
-            {ripples.map((y, i) => (
-              <View
-                key={i}
-                style={{ position: 'absolute', left: 0, right: 0, top: mid + y, height: 1, backgroundColor: 'rgba(240,232,214,0.35)' }}
-              />
+            {ripples.map((r, k) => (
+              <View key={k} style={{ position: 'absolute', left: 0, right: 0, top: mid + r.y, height: 1.5, backgroundColor: `rgba(240,232,214,${r.a.toFixed(2)})` }} />
             ))}
+            {!over && <View style={{ position: 'absolute', left: 0, right: 0, top: mid + waterY - 1.5, height: 3, backgroundColor: K.surface }} />}
           </>
         )}
-        {/* reference point on the ground */}
-        <View style={{ position: 'absolute', left: mid - 28, width: 56, top: mid + groundY - 1, height: 2, backgroundColor: '#FFFFFF' }} />
-        <View style={{ position: 'absolute', left: mid - 1, width: 2, top: mid + groundY - 8, height: 16, backgroundColor: '#FFFFFF' }} />
+
+        {/* spot marker on the ground */}
+        <View
+          style={{
+            position: 'absolute',
+            left: postX - 22,
+            top: mid + groundY - 7,
+            width: 44,
+            height: 14,
+            borderRadius: 22,
+            borderWidth: 2,
+            borderColor: spotSet ? '#FFFFFF' : 'rgba(255,255,255,0.6)',
+            borderStyle: spotSet ? 'solid' : 'dashed',
+          }}
+        />
       </View>
     </View>
   );
@@ -384,11 +437,37 @@ export function RiseScreen() {
   const [showCal, setShowCal] = useState(false);
   const [layout, setLayout] = useState({ W: 1, H: 1 });
   const [flow, setFlow] = useState(0);
-  const [camDenied, setCamDenied] = useState(false);
+  const [camIssue, setCamIssue] = useState<'denied' | 'error' | null>(null);
   const [tapHint, setTapHint] = useState('');
+  const [spotSet, setSpotSet] = useState(false);
+  const [spotX, setSpotX] = useState(0);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraOn = view === 'camera' && !!permission?.granted;
   const { pose, status: sensorStatus } = usePose(cameraOn, pitchOffset);
+
+  // Remember calibration between visits (falls back to defaults if storage fails)
+  useEffect(() => {
+    AsyncStorage.getItem(SETTINGS_KEY)
+      .then(raw => {
+        const v = raw ? JSON.parse(raw) : null;
+        const num = (x: unknown, lo: number, hi: number, d: number) =>
+          typeof x === 'number' && Number.isFinite(x) ? Math.max(lo, Math.min(hi, x)) : d;
+        if (v) {
+          setEyeM(num(v.eyeM, 0.6, 2, DEFAULTS.eyeM));
+          setFovDeg(num(v.fovDeg, 45, 90, DEFAULTS.fovDeg));
+          setPitchOffset(num(v.pitchOffset, -0.6, 0.6, 0));
+          setGroundFt(num(v.groundFt, 0, 60, DEFAULTS.groundFt));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setSettingsLoaded(true));
+  }, []);
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify({ eyeM, fovDeg, pitchOffset, groundFt })).catch(() => {});
+  }, [settingsLoaded, eyeM, fovDeg, pitchOffset, groundFt]);
 
   const hasForecast = model.trained && !!sc.forecast;
   const observed = sc.stage_ft;
@@ -466,20 +545,22 @@ export function RiseScreen() {
     try {
       const p = permission?.granted ? permission : await requestPermission();
       if (p?.granted) {
-        setCamDenied(false);
+        setCamIssue(null);
         setView('camera');
       } else {
-        setCamDenied(true);
+        setCamIssue('denied');
       }
     } catch {
-      setCamDenied(true);
+      setCamIssue('error');
     }
   }
 
   function onTap(e: GestureResponderEvent) {
     if (!measuring) return;
     const { locationX, locationY } = e.nativeEvent;
-    const off = rotatedOffset(locationX - layout.W / 2, locationY - layout.H / 2, pose.roll);
+    const dx = locationX - layout.W / 2;
+    const dy = locationY - layout.H / 2;
+    const off = rotatedOffset(dx, dy, pose.roll);
     const d = distanceFromTap(off, pose, focalPx(layout.W, layout.H, fovDeg), eyeM);
     if (!d) {
       setTapHint('That point is at or above eye level. Tap lower, where the ground meets the object.');
@@ -488,6 +569,8 @@ export function RiseScreen() {
     }
     setTapHint('');
     setDistM(Math.round(d * 10) / 10);
+    setSpotX(dx * Math.cos(pose.roll) + dy * Math.sin(pose.roll));
+    setSpotSet(true);
     setMeasuring(false);
     Haptics.selectionAsync().catch(() => {});
     AccessibilityInfo.announceForAccessibility(`Spot set ${(d * FT_PER_M).toFixed(0)} feet away`);
@@ -495,6 +578,7 @@ export function RiseScreen() {
 
   function pickScenario(i: number) {
     setScIdx(i);
+    setViewerIndex(null);
     setT(0);
     setPlaying(false);
     if (!(model.trained && scenarios[i].forecast)) setSource('observed');
@@ -502,6 +586,33 @@ export function RiseScreen() {
   }
 
   const statusTone = depth >= 1 ? 'danger' : depth > 0 ? 'warn' : 'ok';
+
+  function resetCalibration() {
+    setEyeM(DEFAULTS.eyeM);
+    setFovDeg(DEFAULTS.fovDeg);
+    setPitchOffset(0);
+    setDistM(4);
+    setSpotX(0);
+    setSpotSet(false);
+  }
+
+  // One bottom banner, most important message first
+  let banner: { tone: 'info' | 'warn' | 'alert'; text: string } | null = null;
+  if (cameraOn && measuring) {
+    banner = { tone: 'info', text: tapHint || 'Tap where the ground meets a wall, car or curb.' };
+  } else if (cameraOn && sensorStatus === 'denied') {
+    banner = { tone: 'warn', text: 'Motion access is off, so the water can’t stay level as you tilt. Allow Motion & Fitness in Settings.' };
+  } else if (cameraOn && sensorStatus === 'unavailable') {
+    banner = { tone: 'warn', text: 'No motion sensor found. Hold the phone upright and pointed straight ahead.' };
+  } else if (cameraOn && sensorStatus === 'ok' && pose.pitch < -1.05) {
+    banner = { tone: 'info', text: 'Raise the phone and look toward the spot.' };
+  } else if (cameraOn && sensorStatus === 'ok' && pose.pitch > 0.6) {
+    banner = { tone: 'info', text: 'Tilt the phone down toward the ground.' };
+  } else if (cameraOn && !spotSet) {
+    banner = { tone: 'info', text: 'Point at a wall, car or curb 10 to 40 ft away, then tap Set spot.' };
+  } else if (gaugeLost) {
+    banner = { tone: 'alert', text: 'The river gauge stopped reporting here. The water kept rising.' };
+  }
 
   return (
     <View style={st.root}>
@@ -516,8 +627,29 @@ export function RiseScreen() {
             onPress={onTap}
             accessibilityLabel={measuring ? 'Tap where the ground meets a wall or object' : 'Camera view with simulated flood water'}
           >
-            <CameraView style={StyleSheet.absoluteFill} facing="back" />
-            {layout.W > 1 && <WaterOverlay W={layout.W} H={layout.H} pose={pose} fovDeg={fovDeg} eyeM={eyeM} distM={distM} depthM={depthM} flow={flow} />}
+            <CameraView
+              style={StyleSheet.absoluteFill}
+              facing="back"
+              onMountError={() => {
+                setView('diagram');
+                setCamIssue('error');
+              }}
+            />
+            {layout.W > 1 && (
+              <WaterOverlay
+                W={layout.W}
+                H={layout.H}
+                pose={pose}
+                fovDeg={fovDeg}
+                eyeM={eyeM}
+                distM={distM}
+                spotX={spotX}
+                spotSet={spotSet}
+                depthM={depthM}
+                flow={flow}
+              />
+            )}
+            {measuring && <View style={st.measureDim} pointerEvents="none" />}
           </Pressable>
         ) : (
           <View style={st.diagramWrap} accessible accessibilityLabel={`Side view. Water is ${formatDepth(depth)} deep next to an adult and a car.`}>
@@ -536,23 +668,15 @@ export function RiseScreen() {
           </View>
         </View>
 
-        {measuring && (
-          <View style={st.measureBanner} pointerEvents="none">
-            <Text style={st.measureText}>{tapHint || 'Tap where the ground meets a wall, car or curb.'}</Text>
-          </View>
-        )}
-        {cameraOn && (sensorStatus === 'unavailable' || sensorStatus === 'denied') && (
-          <View style={st.warnBanner} pointerEvents="none">
-            <Text style={st.warnText}>
-              {sensorStatus === 'denied'
-                ? 'Motion access is off, so the water can’t stay level as you tilt. Allow Motion & Fitness in Settings.'
-                : 'This phone has no motion sensor, so hold it level and pointed straight ahead.'}
+        {banner && (
+          <View
+            style={[st.banner, banner.tone === 'warn' && st.bannerWarn, banner.tone === 'alert' && st.bannerAlert]}
+            pointerEvents="none"
+            accessibilityLiveRegion="polite"
+          >
+            <Text style={[st.bannerText, banner.tone === 'alert' && st.bannerTextAlert, banner.tone === 'warn' && st.bannerTextWarn]}>
+              {banner.text}
             </Text>
-          </View>
-        )}
-        {gaugeLost && !measuring && (
-          <View style={st.lostBanner} pointerEvents="none">
-            <Text style={st.lostText}>The river gauge stopped reporting here. The water kept rising.</Text>
           </View>
         )}
       </View>
@@ -602,18 +726,26 @@ export function RiseScreen() {
               }}
               accessibilityRole="button"
               accessibilityState={{ selected: measuring }}
-              style={[st.secondary, measuring && st.secondaryActive]}
+              style={[st.secondary, (measuring || !spotSet) && st.secondaryActive]}
             >
-              <Text style={[st.secondaryText, measuring && st.secondaryTextActive]}>Set spot</Text>
+              <Text style={[st.secondaryText, (measuring || !spotSet) && st.secondaryTextActive]}>
+                {measuring ? 'Cancel' : spotSet ? 'Move spot' : 'Set spot'}
+              </Text>
             </Pressable>
           )}
         </View>
-        {camDenied && view !== 'camera' && (
+        {camIssue && view !== 'camera' && (
           <View style={st.card}>
-            <Text style={st.cardText}>Camera access is off. The side view still shows the same water depth.</Text>
-            <Pressable onPress={() => Linking.openSettings().catch(() => {})} accessibilityRole="button" style={st.secondary}>
-              <Text style={st.secondaryText}>Open Settings</Text>
-            </Pressable>
+            <Text style={st.cardText}>
+              {camIssue === 'denied'
+                ? 'Camera access is off. The side view still shows the same water depth.'
+                : 'The camera could not start. Close other apps using it and try again; the side view still works.'}
+            </Text>
+            {camIssue === 'denied' && (
+              <Pressable onPress={() => Linking.openSettings().catch(() => {})} accessibilityRole="button" style={st.secondary}>
+                <Text style={st.secondaryText}>Open Settings</Text>
+              </Pressable>
+            )}
           </View>
         )}
 
@@ -691,8 +823,8 @@ export function RiseScreen() {
         {cameraOn && showCal && (
           <View style={st.card}>
             <Text style={st.cardText}>
-              Water is drawn on a spot {distM.toFixed(1)} m ({(distM * FT_PER_M).toFixed(0)} ft) away, with the phone held{' '}
-              {(eyeM * FT_PER_M).toFixed(1)} ft above the ground. Use Set spot to measure a new spot by tapping its base.
+              {spotSet ? `Your spot is ${(distM * FT_PER_M).toFixed(0)} ft away.` : 'No spot set yet, so the gauge stands 13 ft ahead.'} The phone is held{' '}
+              {formatDepth(eyeM * FT_PER_M)} above the ground; match this to how you are holding it.
             </Text>
             <View style={st.row}>
               <Stepper label="Phone lower" onPress={() => setEyeM(v => Math.max(0.6, +(v - 0.1).toFixed(1)))} />
@@ -705,6 +837,9 @@ export function RiseScreen() {
             </View>
             <Pressable onPress={() => setPitchOffset(o => o + pose.pitch)} accessibilityRole="button" style={st.secondary}>
               <Text style={st.secondaryText}>Point at eye level, then tap to level</Text>
+            </Pressable>
+            <Pressable onPress={resetCalibration} accessibilityRole="button" style={st.linkRow}>
+              <Text style={st.link}>Reset calibration</Text>
             </Pressable>
             <Text style={st.noteSmall}>
               Depth comes from the phone’s tilt sensors and your tap, which works in Expo Go. LiDAR depth on Pro iPhones needs a
@@ -725,19 +860,23 @@ export function RiseScreen() {
           <>
             <Text style={st.sectionLabel}>Aerial photos near this gauge (UTSA dataset)</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.thumbs}>
-              {sc.images.map(img => (
-                <View key={img.image_id} style={st.thumbWrap}>
-                  <Image
-                    source={{ uri: img.url }}
-                    style={st.thumb}
-                    accessibilityLabel={`${img.source} aerial photo, ${img.locality}, ${img.date}`}
-                  />
-                  <Text style={st.thumbText}>{img.date}</Text>
-                </View>
+              {sc.images.map((img, i) => (
+                <Pressable
+                  key={img.image_id}
+                  onPress={() => setViewerIndex(i)}
+                  accessibilityRole="imagebutton"
+                  accessibilityLabel={`${img.source} aerial photo, ${img.locality}, ${img.date}`}
+                  accessibilityHint="Opens a larger view"
+                  style={({ pressed }) => [st.thumbWrap, pressed && { opacity: 0.7 }]}
+                >
+                  <Image source={{ uri: img.url }} style={st.thumb} />
+                  <Text style={st.thumbText}>{img.date} · tap to enlarge</Text>
+                </Pressable>
               ))}
             </ScrollView>
           </>
         )}
+        <PhotoViewer photos={sc.images} index={viewerIndex} onIndex={setViewerIndex} onClose={() => setViewerIndex(null)} />
 
         <Text style={st.noteSmall}>
           {sc.gauge_name} (USGS {sc.gauge_id.replace('USGS-', '')}). Depth at your spot is estimated from the river’s rise and the
@@ -792,10 +931,19 @@ const st = StyleSheet.create({
   clockTag: { backgroundColor: K.white, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'flex-end', borderWidth: 1, borderColor: K.border },
   clockTime: { fontSize: 17, fontWeight: '700', color: K.ink },
   clockDay: { fontSize: 12, color: K.muted },
+  measureDim: { ...StyleSheet.absoluteFill, borderWidth: 3, borderColor: '#FFFFFF' },
+  banner: { position: 'absolute', bottom: 12, left: 12, right: 12, backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 8, padding: 10 },
+  bannerWarn: { backgroundColor: K.amberLight, borderWidth: 1, borderColor: '#FDE047' },
+  bannerAlert: { backgroundColor: K.red },
+  bannerText: { fontSize: 14, color: K.ink, textAlign: 'center', fontWeight: '600' },
+  bannerTextWarn: { color: K.amber },
+  bannerTextAlert: { color: K.white },
   measureBanner: { position: 'absolute', bottom: 12, left: 12, right: 12, backgroundColor: K.white, borderRadius: 8, padding: 10 },
   measureText: { fontSize: 14, color: K.ink, textAlign: 'center', fontWeight: '600' },
   warnBanner: { position: 'absolute', bottom: 12, left: 12, right: 12, backgroundColor: K.amberLight, borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#FDE047' },
   warnText: { fontSize: 13, color: K.amber, textAlign: 'center', fontWeight: '600' },
+  gaugeLabel: { position: 'absolute', color: '#FFFFFF', fontSize: 13, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 3 },
+  gaugeNote: { position: 'absolute', width: 80, textAlign: 'right', color: '#FFFFFF', fontSize: 11, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 3 },
   lostBanner: { position: 'absolute', bottom: 12, left: 12, right: 12, backgroundColor: K.red, borderRadius: 8, padding: 10 },
   lostText: { fontSize: 14, color: K.white, textAlign: 'center', fontWeight: '600' },
   panel: { flexGrow: 0, maxHeight: '52%', backgroundColor: K.white, borderTopWidth: 1, borderTopColor: K.border },
@@ -837,6 +985,6 @@ const st = StyleSheet.create({
   cardText: { fontSize: 14, lineHeight: 20, color: K.ink2 },
   thumbs: { gap: 8 },
   thumbWrap: { gap: 4 },
-  thumb: { width: 120, height: 90, borderRadius: 8, backgroundColor: K.border },
+  thumb: { width: 140, height: 140, borderRadius: 8, backgroundColor: K.border },
   thumbText: { fontSize: 11, color: K.muted },
 });
