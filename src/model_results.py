@@ -45,6 +45,16 @@ def water_for(after_id: str) -> dict | None:
     return water_scores().get("pairs", {}).get(after_id)
 
 
+def flood_scores() -> dict:
+    # not cached: retraining rewrites it while the server runs
+    return _read(APP_DATA / "floodScores.json") or {"model": {"trained": False}, "pairs": {}}
+
+
+def flood_for(after_id: str) -> dict | None:
+    d = flood_scores()
+    return d["pairs"].get(after_id) if d.get("model", {}).get("trained") else None
+
+
 @lru_cache(maxsize=1)
 def scenarios() -> dict:
     return _read(APP_DATA / "floodScenarios.json") or {"model": {"trained": False}, "scenarios": []}
@@ -85,6 +95,9 @@ def models_summary() -> dict:
             "checks": cd["checks"],
             "baseline": "naive feature distance without the camera translator",
         }
+    fs = flood_scores().get("model")
+    if fs and fs.get("trained"):
+        out["flood_classifier"] = fs
     ws = water_scores().get("model")
     if ws:
         out["floodwater_colour_index"] = ws

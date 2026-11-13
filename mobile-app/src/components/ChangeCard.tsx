@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import changeRaw from '../data/changeScores.json';
+import floodRaw from '../data/floodScores.json';
 import waterRaw from '../data/waterScores.json';
 
 type Entry = { score: number; percentile: number; rank: number; grid: string };
@@ -11,6 +12,17 @@ const water = waterRaw as unknown as Scores;
 /** Self-supervised change detector (trained on Colab). */
 export function changeFor(afterId: string): Entry | undefined {
   return change.pairs[afterId];
+}
+
+type Flood = {
+  model: { trained: boolean; labels?: number; cv_auc?: number };
+  pairs: Record<string, { prob: number; rank: number }>;
+};
+const flood = floodRaw as unknown as Flood;
+
+/** Classifier trained on the team's labels (ml/train_flood_classifier.py), once available. */
+export function floodFor(afterId: string) {
+  return flood.model.trained ? flood.pairs[afterId] : undefined;
 }
 
 /** Rule-based floodwater colour index (ml/water_color_index.py). */
@@ -81,6 +93,14 @@ export function ChangeCard({ afterId, afterUrl }: { afterId: string; afterUrl: s
           </View>
         )}
       </View>
+      {floodFor(afterId) && (
+        <Text style={st.classifier}>
+          Flood classifier: {Math.round((floodFor(afterId)?.prob ?? 0) * 100)}% likely flooded
+          <Text style={st.bigSub}>
+            {'  '}(trained on {flood.model.labels} team labels, AUC {flood.model.cv_auc})
+          </Text>
+        </Text>
+      )}
       <Text style={st.big} accessibilityLabel={`Rank ${entry.rank} of ${total}. ${verdict}.`}>
         #{entry.rank} <Text style={st.bigSub}>of {total} · {verdict}</Text>
       </Text>
@@ -118,6 +138,7 @@ const st = StyleSheet.create({
   segText: { fontSize: 13, fontWeight: '600', color: '#111815' },
   segTextActive: { color: '#FFFFFF' },
   big: { fontSize: 22, fontWeight: '700', color: '#111815' },
+  classifier: { fontSize: 15, fontWeight: '700', color: '#7C3A0E' },
   bigSub: { fontSize: 14, fontWeight: '500', color: '#526357' },
   small: { fontSize: 12, lineHeight: 17, color: '#526357' },
   frame: { width: '100%', aspectRatio: 1, borderRadius: 8, overflow: 'hidden', backgroundColor: '#D8E2DC' },

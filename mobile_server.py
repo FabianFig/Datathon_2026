@@ -12,10 +12,23 @@ from urllib.parse import parse_qs, urlparse
 from src.catalog import image_path, load_catalog, pairs, search_pairs
 from src.cues import get_image_cue, load_cue_model
 from src.dossiers import load_dossier
-from src.model_results import change_for, change_scores, models_summary, scenarios, water_for
+from src.model_results import change_for, change_scores, flood_for, models_summary, scenarios, water_for
 from src.reviews import load_reviews_index, save_review
 
 ROOT = Path(__file__).resolve().parent
+
+
+def load_flood_labels(path: Path) -> list[dict]:
+    """Latest label per (labeler, after_id) from the append-only labels file."""
+    latest: dict[tuple[str, str], dict] = {}
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                r = json.loads(line)
+                latest[(r.get("labeler", ""), r["after_id"])] = r
+            except (ValueError, KeyError):
+                continue
+    return list(latest.values())
 
 
 def change_scores_trained() -> bool:
@@ -68,6 +81,7 @@ def pair_data(
     record["change"] = change_for(after["image_id"])
     # Floodwater colour index (rule-based, validated by eye): rank + heatmap
     record["water"] = water_for(after["image_id"])
+    record["flood"] = flood_for(after["image_id"])
 
     # Human review status if reviewed
     reviews_map = load_reviews_index(reviews_file)
@@ -82,6 +96,7 @@ def make_handler(data_dir: Path, model_dir: Path = Path("models/flood_cue")):
     by_id = {row["image_id"]: row for pair in all_pairs for row in pair}
     dossier_dir = Path(os.getenv("FLOOD_DOSSIER_DIR", "reviews/dossiers"))
     reviews_file = Path(os.getenv("FLOOD_REVIEWS_FILE", "reviews/reviews.jsonl"))
+    labels_file = Path(os.getenv("FLOOD_LABELS_FILE", "reviews/flood_labels.jsonl"))
 
     class Handler(BaseHTTPRequestHandler):
         def _send_cors_headers(self):
@@ -243,6 +258,10 @@ def make_handler(data_dir: Path, model_dir: Path = Path("models/flood_cue")):
                     self.send_json(502, {"error": f"Could not build a forecast right now: {exc}"})
                 return
 
+            if parsed.path == "/api/labels":
+                self.send_json(200, load_flood_labels(labels_file))
+                return
+
             if parsed.path == "/api/reviews":
                 reviews = load_reviews_index(reviews_file)
                 self.send_json(200, list(reviews.values()))
@@ -271,6 +290,31 @@ def make_handler(data_dir: Path, model_dir: Path = Path("models/flood_cue")):
                     self.send_json(201, {"status": "saved", "review": record})
                 except Exception as exc:
                     self.send_json(400, {"error": f"Failed to save review: {exc}"})
+                return
+
+            if parsed.path == "/api/label":
+                length = int(self.headers.get("Content-Length", 0))
+                if length <= 0 or length > 4096:
+                    self.send_json(400, {"error": "Invalid payload size"})
+                    return
+                try:
+                    p = json.loads(self.rfile.read(length).decode("utf-8"))
+                    rec = {
+                        "after_id": str(p.get("after_id", "")).strip(),
+                        "before_id": str(p.get("before_id", "")).strip(),
+                        "label": str(p.get("label", "")).strip(),
+                        "labeler": str(p.get("labeler", "")).strip()[:16],
+                        "at": str(p.get("at", "")).strip()[:40],
+                    }
+                    if rec["label"] not in ("flooded", "dry", "unsure") or rec["after_id"] not in by_id:
+                        self.send_json(400, {"error": "Need a known after_id and label flooded, dry or unsure"})
+                        return
+                    labels_file.parent.mkdir(parents=True, exist_ok=True)
+                    with labels_file.open("a", encoding="utf-8") as fh:
+                        fh.write(json.dumps(rec) + "\n")
+                    self.send_json(201, {"status": "saved"})
+                except (ValueError, OSError) as exc:
+                    self.send_json(400, {"error": f"Could not save label: {exc}"})
                 return
 
             self.send_json(404, {"error": "Not found"})

@@ -495,6 +495,20 @@ export function AppScreen({ tab }: { tab: Tab }) {
             </Pressable>
           )}
 
+          {/* Labelling entry point */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityHint="Opens a screen to mark photos as flooded or not"
+            onPress={() => router.push('/label')}
+            style={({ pressed }) => [s.labelCta, pressed && s.pressed]}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={s.labelCtaTitle}>Label photos</Text>
+              <Text style={s.labelCtaSub}>Mark 150 photos as flooded or not, to train and score the flood model.</Text>
+            </View>
+            <Text style={s.chevron}>›</Text>
+          </Pressable>
+
           {/* Search & Filter Bar */}
           <View style={s.searchSection}>
             <TextInput
@@ -1043,9 +1057,12 @@ export function AppScreen({ tab }: { tab: Tab }) {
 const TAB_LABELS: Record<string, string> = { index: 'Rise', explore: 'Explore', compare: 'Compare', settings: 'Settings' };
 
 export function AppTabBar({ state, navigateToTab, insets }: BottomTabBarProps) {
+  // Full-screen tasks (like labelling) hide the tab bar
+  if (!(state.routes[state.index]?.name in TAB_LABELS)) return null;
   return (
     <View style={[s.nav, { paddingBottom: Math.max(insets.bottom, 6) }]} accessibilityRole="tablist">
       {state.routes.map((route, i) => {
+        if (!(route.name in TAB_LABELS)) return null; // e.g. the label screen
         const isActive = state.index === i;
         const label = TAB_LABELS[route.name] ?? route.name;
         return (
@@ -1151,6 +1168,9 @@ const s = StyleSheet.create({
 
   // Search & Filters
   searchSection: { gap: 10 },
+  labelCta: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: C.borderStrong, borderRadius: 10, backgroundColor: C.white, padding: 14 },
+  labelCtaTitle: { fontSize: 15, fontWeight: '700', color: C.ink },
+  labelCtaSub: { fontSize: 13, color: C.muted, marginTop: 2 },
   searchInput: {
     minHeight: 48,
     borderWidth: 1,
