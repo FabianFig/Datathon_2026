@@ -433,7 +433,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
         </Pressable>
       </View>
 
-      {tab === 'Rise' && <RiseScreen />}
+      {tab === 'Rise' && <RiseScreen apiBase={apiBase} />}
 
       {/* ---------------------------------------------------------------- */}
       {/* EXPLORE TAB */}

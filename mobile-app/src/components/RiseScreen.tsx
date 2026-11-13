@@ -472,7 +472,78 @@ function Timeline({
 }
 
 // --------------------------------------------------------------------------- screen
-export function RiseScreen() {
+type LiveForecast = {
+  gauge: string;
+  name: string;
+  issued_at: string;
+  current_ft: number;
+  forecast: { lead_h: number; stage_ft: number; rise_ft: number }[];
+  rain_next_6h_mm: number;
+  model: string;
+  note: string;
+};
+
+/** Live river forecast from the trained model, served by mobile_server.py. */
+function LiveForecastCard({ apiBase, gauge, gaugeName }: { apiBase: string; gauge: string; gaugeName: string }) {
+  const [data, setData] = useState<LiveForecast | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const r = await fetch(`${apiBase}/api/forecast?gauge=${encodeURIComponent(gauge)}`);
+      const body = await r.json();
+      if (!r.ok) throw Error(body?.error || `Server returned ${r.status}`);
+      setData(body as LiveForecast);
+    } catch (e) {
+      setData(null);
+      setError(e instanceof Error ? e.message : 'Could not load the live forecast');
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBase, gauge]);
+
+  const pick = (h: number) => data?.forecast.find(f => f.lead_h === h);
+  const issued = data ? new Date(data.issued_at) : null;
+
+  return (
+    <View style={st.card}>
+      <Text style={st.cardTitle}>Live forecast · {gaugeName}</Text>
+      {!data && !error && !loading && (
+        <Text style={st.cardText}>Run the trained river model on this gauge’s latest readings and the rain forecast.</Text>
+      )}
+      {loading && <Text style={st.cardText}>Fetching readings and running the model…</Text>}
+      {error ? <Text style={st.cardText}>{error}</Text> : null}
+      {data && (
+        <>
+          <Text style={st.cardText}>
+            River now {data.current_ft.toFixed(1)} ft
+            {issued ? ` (reading at ${issued.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})` : ''}. Rain expected in the next 6 h:{' '}
+            {data.rain_next_6h_mm} mm.
+          </Text>
+          <View style={st.facts}>
+            {[1, 3, 6, 12].map(h => {
+              const f = pick(h);
+              return f ? (
+                <Fact key={h} label={`in ${h} h`} value={`${f.rise_ft >= 0 ? '+' : ''}${f.rise_ft.toFixed(1)} ft`} />
+              ) : null;
+            })}
+          </View>
+          <Text style={st.noteSmall}>
+            {data.model}. {data.note}
+          </Text>
+        </>
+      )}
+      <Pressable onPress={load} accessibilityRole="button" style={st.secondary} disabled={loading}>
+        <Text style={st.secondaryText}>{data ? 'Refresh' : 'Run live forecast'}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
   const [scIdx, setScIdx] = useState(0);
   const sc = scenarios[scIdx];
   const n = sc.hours.length - 1;
@@ -955,6 +1026,8 @@ export function RiseScreen() {
             </Text>
           </>
         )}
+
+        {apiBase ? <LiveForecastCard key={sc.gauge_id} apiBase={apiBase} gauge={sc.gauge_id} gaugeName={sc.gauge_name} /> : null}
 
         {/* ground stepper */}
         <Text style={st.sectionLabel}>Your ground is {groundFt} ft above the river’s normal level</Text>

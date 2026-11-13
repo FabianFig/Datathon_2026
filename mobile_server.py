@@ -12,9 +12,14 @@ from urllib.parse import parse_qs, urlparse
 from src.catalog import image_path, load_catalog, pairs, search_pairs
 from src.cues import get_image_cue, load_cue_model
 from src.dossiers import load_dossier
+from src.model_results import change_for, change_scores, models_summary, scenarios
 from src.reviews import load_reviews_index, save_review
 
 ROOT = Path(__file__).resolve().parent
+
+
+def change_scores_trained() -> bool:
+    return bool(change_scores().get("model", {}).get("trained"))
 
 
 def pair_data(
@@ -58,6 +63,9 @@ def pair_data(
         record["after_cue"] = get_image_cue(after["image_id"], after_file, model_dir)
     except Exception:
         record["after_cue"] = None
+
+    # Photo change model (self-supervised, trained on Colab): rank + heatmap
+    record["change"] = change_for(after["image_id"])
 
     # Human review status if reviewed
     reviews_map = load_reviews_index(reviews_file)
@@ -143,6 +151,8 @@ def make_handler(data_dir: Path, model_dir: Path = Path("models/flood_cue")):
                     "status": "ready",
                     "pairs": len(all_pairs),
                     "cue_model_available": cue_model is not None,
+                    "change_model_trained": change_scores_trained(),
+                    "river_forecaster_trained": bool(scenarios().get("model", {}).get("trained")),
                     "cue_model_info": cue_meta if cue_meta else None,
                     "vlm_endpoint": os.getenv("GB10_BASE_URL", "http://127.0.0.1:11434/v1"),
                 })
@@ -198,6 +208,37 @@ def make_handler(data_dir: Path, model_dir: Path = Path("models/flood_cue")):
                     self.send_json(415, {"error": "Unsupported image type"})
                     return
                 self.send_bytes(200, body, content_type)
+                return
+
+            if parsed.path == "/api/models":
+                self.send_json(200, models_summary())
+                return
+
+            if parsed.path == "/api/scenarios":
+                self.send_json(200, scenarios())
+                return
+
+            if parsed.path == "/api/forecast":
+                gauge = query.get("gauge", [""])[0].strip()
+                try:
+                    import sys as _sys
+
+                    _sys.path.insert(0, str(ROOT / "ml"))
+                    from live_forecast import forecast  # needs pandas, numpy, lightgbm
+                except ImportError as exc:
+                    self.send_json(503, {"error": f"Live forecasting needs pandas, numpy and lightgbm on the server ({exc})"})
+                    return
+                if not gauge:
+                    from data_sources import GAUGES
+
+                    self.send_json(200, {"gauges": {g: v["name"] for g, v in GAUGES.items()}})
+                    return
+                try:
+                    self.send_json(200, forecast(gauge))
+                except KeyError as exc:
+                    self.send_json(404, {"error": str(exc)})
+                except Exception as exc:  # upstream API or data gap
+                    self.send_json(502, {"error": f"Could not build a forecast right now: {exc}"})
                 return
 
             if parsed.path == "/api/reviews":

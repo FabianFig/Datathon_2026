@@ -15,6 +15,26 @@ The app opens on **Rise**. Pick a real flood, press Play, and watch the water ri
 
 Replayed events (all held out of model training): Guadalupe River at Hunt and at Kerrville (July 4 2025), W Fork San Jacinto near Humble and Buffalo Bayou near Addicks (Harvey 2017). Depth at "your spot" = river rise minus the ground height you set (default 20 ft above normal river level). It is an illustration, not a forecast for an address.
 
+## Using the trained models
+
+Both models were trained offline, and their results ship with the app as JSON, so Expo Go works with no server:
+
+| Model | Trained on | Output file | Used in the app |
+|---|---|---|---|
+| River-level forecaster (LightGBM) | USAA Datathon Qwen server | `mobile-app/src/data/floodScenarios.json` (forecasts 1–12 h ahead for each replayed hour) | Rise → More → Water level from → Model forecast |
+| Photo change model | Google Colab L4 | `mobile-app/src/data/changeScores.json` (rank + 16×16 heatmap per pair) | Compare card and heatmap; Explore "Top 10% change" badge |
+
+`mobile_server.py` serves the same results plus a live forecast:
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/models` | Each model's headline metrics next to its baseline |
+| `GET /api/scenarios` | The four flood replays with model forecasts |
+| `GET /api/pairs`, `/api/pair?index=` | Pairs now include `change` (score, percentile, rank, heatmap) |
+| `GET /api/forecast?gauge=USGS-08165500` | Runs the trained LightGBM models on the gauge's last 4 days of USGS readings and Open-Meteo's rain forecast; returns the predicted rise 1–12 h ahead. `GET /api/forecast` lists the 18 gauges. |
+
+The live forecast needs `pandas numpy lightgbm` on the server (the training environment); without them it returns 503 and everything else still works. When the app is connected in Settings, Rise → More shows a **Live forecast** card for the selected gauge. It is experimental and not an official flood forecast.
+
 ## ML model 1: photo change detector (`ml/train_change_detector.py`)
 
 Self-supervised, trained on the 575 UTSA Harvey photo pairs with no labels. A frozen ResNet-50 turns each photo into a 16x16 grid of patch features, and a small conv "camera translator" learns to predict the 2017 NOAA photo's features from the 2016 USDA photo's features. Because the camera difference is shared by every pair, the translator learns it; a flood at one location is unique, so it can't. The patches it fails to predict are the change heatmap. Training uses a trimmed loss that ignores the 20% hardest patches so real changes aren't learned away, and 5-fold cross-validation grouped by spatial block, so every pair is scored by a model that never saw that area.
