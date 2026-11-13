@@ -164,7 +164,7 @@ def make_handler(data_dir: Path, model_dir: Path = Path("models/flood_cue")):
             if parsed.path == "/" or parsed.path == "/api/status":
                 cue_model, cue_meta = load_cue_model(model_dir)
                 self.send_json(200, {
-                    "name": "Flood Time Machine API",
+                    "name": "Waterline API",
                     "status": "ready",
                     "pairs": len(all_pairs),
                     "cue_model_available": cue_model is not None,
@@ -323,7 +323,7 @@ def make_handler(data_dir: Path, model_dir: Path = Path("models/flood_cue")):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Serve the Flood Time Machine API")
+    parser = argparse.ArgumentParser(description="Serve the Waterline API")
     parser.add_argument("--data-dir", default=os.getenv("FLOOD_DATA_DIR", "UTSA-flood-images"))
     parser.add_argument("--model-dir", default=os.getenv("FLOOD_MODEL_DIR", "models/flood_cue"))
     parser.add_argument("--host", default="0.0.0.0")
@@ -336,7 +336,7 @@ def main():
         parser.error(f"Data directory not found: {data_dir}")
 
     server = ThreadingHTTPServer((args.host, args.port), make_handler(data_dir, model_dir))
-    print(f"Flood Time Machine API running at: http://{args.host}:{args.port}")
+    print(f"Waterline API running at: http://{args.host}:{args.port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

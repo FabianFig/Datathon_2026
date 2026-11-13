@@ -1,4 +1,6 @@
-# Flood Time Machine
+# Waterline
+
+*See how fast the water rises.* Formerly "Flood Time Machine".
 
 Datathon prototype for exploring historical Texas floods. The desktop analysis tool shows paired aerial imagery on a map, asks a GB10 vision model for a cautious change dossier, and collects human reviews. The main experience is a **React Native app for iOS and Android** in `mobile-app/`, with Rise, Explore, Compare, and Settings screens.
 

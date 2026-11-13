@@ -55,8 +55,10 @@ export function series(sc: Scenario, source: 'observed' | 'forecast', lead: numb
   return sc.stage_ft;
 }
 
-export function stageAt(values: (number | null)[], t: number): number | null {
-  const i = Math.max(0, Math.min(values.length - 1, Math.floor(t)));
+export function stageAt(values: (number | null)[], tRaw: number): number | null {
+  if (!values.length || !Number.isFinite(tRaw)) return null;
+  const t = Math.max(0, Math.min(values.length - 1, tRaw)); // hold the ends, never extrapolate
+  const i = Math.floor(t);
   const j = Math.min(values.length - 1, i + 1);
   let a = values[i];
   let b = values[j];

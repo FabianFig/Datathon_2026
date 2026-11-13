@@ -18,6 +18,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import { locateMySpot, type SpotResult } from '../lib/mySpot';
+import { fetchWithTimeout, readJson } from '../lib/net';
 import { PhotoViewer } from './PhotoViewer';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import {
@@ -68,7 +69,7 @@ const K = {
 
 type Source = 'observed' | 'forecast';
 const LEADS = [1, 3, 6];
-const SPEEDS = [0.5, 1, 2, 4]; // 1x plays the whole event in about 20 s
+const SPEEDS = [0.5, 1, 2, 4];
 const SETTINGS_KEY = 'rise.calibration.v1';
 const DEFAULTS = { eyeM: 1.4, fovDeg: 69, pitchOffset: 0, groundFt: 20 };
 
@@ -494,8 +495,8 @@ function LiveForecastCard({ apiBase, gauge, gaugeName }: { apiBase: string; gaug
     setLoading(true);
     setError('');
     try {
-      const r = await fetch(`${apiBase}/api/forecast?gauge=${encodeURIComponent(gauge)}`);
-      const body = await r.json();
+      const r = await fetchWithTimeout(`${apiBase}/api/forecast?gauge=${encodeURIComponent(gauge)}`, {}, 45_000);
+      const body = await readJson<LiveForecast & { error?: string }>(r);
       if (!r.ok) throw Error(body?.error || `Server returned ${r.status}`);
       setData(body as LiveForecast);
     } catch (e) {
@@ -557,12 +558,12 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
   const [spotBusy, setSpotBusy] = useState('');
   const [spotError, setSpotError] = useState('');
 
-  async function useMySpot() {
+  async function locateSpot() {
     setSpotError('');
     try {
       const r = await locateMySpot(setSpotBusy);
       setSpot(r);
-      setGroundFt(Math.round(r.aboveLowFt));
+      setGroundFt(Math.min(200, Math.round(r.aboveLowFt)));
       AccessibilityInfo.announceForAccessibility(`You are ${Math.round(r.aboveLowFt)} feet above the low ground near you`);
     } catch (e) {
       setSpotError(e instanceof Error ? e.message : 'Could not look up your spot.');
@@ -609,7 +610,7 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
           setEyeM(num(v.eyeM, 0.6, 2, DEFAULTS.eyeM));
           setFovDeg(num(v.fovDeg, 45, 90, DEFAULTS.fovDeg));
           setPitchOffset(num(v.pitchOffset, -0.6, 0.6, 0));
-          setGroundFt(num(v.groundFt, 0, 60, DEFAULTS.groundFt));
+          setGroundFt(num(v.groundFt, 0, 200, DEFAULTS.groundFt));
         }
       })
       .catch(() => {})
@@ -649,15 +650,26 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
   const obsCars = crossing(observed, sc, groundFt, 1);
   const fcCars = forecastSeries ? crossing(forecastSeries, sc, groundFt, 1) : null;
 
-  // Playback: whole event in ~20 s
+  // Playback. Dry hours pass quickly; while water at your spot is rising the
+  // clock slows down (up to 5x), so the rise itself is easy to watch.
+  // At 1x an event with no rise would take about 35 s.
   const speed = SPEEDS[speedIdx];
   const atEnd = t >= n;
   const isPlaying = playing && !atEnd && focused;
+  const playRef = useRef({ driving, sc, groundFt });
+  useEffect(() => {
+    playRef.current = { driving, sc, groundFt };
+  }, [driving, sc, groundFt]);
   useEffect(() => {
     if (!isPlaying) return;
     const id = setInterval(() => {
-      setT(prev => Math.min(n, prev + (n / 400) * speed));
-      setFlow(v => (v + 0.08) % 6);
+      setT(prev => {
+        const { driving: d, sc: s, groundFt: g } = playRef.current;
+        const rate = Math.abs(depthFt(stageAt(d, prev + 0.5), s, g) - depthFt(stageAt(d, Math.max(0, prev - 0.5)), s, g)); // ft per hour
+        const slow = Math.min(5, 1 + rate / 3);
+        return Math.min(n, prev + ((n / 700) * speed) / slow); // ~35 s for a quiet event
+      });
+      setFlow(v => (v + 0.06) % 6);
     }, 50);
     return () => clearInterval(id);
   }, [isPlaying, n, speed]);
@@ -990,7 +1002,7 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
           </Pressable>
         </View>
         {!showMore && !spot && (
-          <Pressable onPress={useMySpot} disabled={!!spotBusy} accessibilityRole="button" style={st.spotLink} hitSlop={6}>
+          <Pressable onPress={locateSpot} disabled={!!spotBusy} accessibilityRole="button" style={st.spotLink} hitSlop={6}>
             <Text style={st.link}>{spotBusy || 'Use my location for how deep it would get here'}</Text>
           </Pressable>
         )}
@@ -1082,7 +1094,7 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
           {spotError ? <Text style={st.noteSmall}>{spotError}</Text> : null}
           <Pressable
             disabled={!!spotBusy}
-            onPress={useMySpot}
+            onPress={locateSpot}
             accessibilityRole="button"
             style={[st.secondary, !!spotBusy && { opacity: 0.5 }]}
           >
@@ -1099,7 +1111,7 @@ export function RiseScreen({ apiBase = '' }: { apiBase?: string }) {
         </Text>
         <View style={st.row}>
           <Stepper label="Lower" onPress={() => setGroundFt(g => Math.max(0, g - 2))} />
-          <Stepper label="Higher" onPress={() => setGroundFt(g => Math.min(60, g + 2))} />
+          <Stepper label="Higher" onPress={() => setGroundFt(g => Math.min(200, g + 2))} />
           {spot && (
             <Stepper
               label="Forget my spot"

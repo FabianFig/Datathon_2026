@@ -39,7 +39,7 @@ _MODELS: dict = {}
 
 
 def _get(url: str) -> dict:
-    req = urllib.request.Request(url, headers={"User-Agent": "flood-time-machine-datathon/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "waterline-datathon/1.0"})
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.loads(r.read())
 

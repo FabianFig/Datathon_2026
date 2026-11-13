@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Flood Time Machine",
-    "slug": "flood-time-machine",
-    "scheme": "floodtimemachine",
+    "name": "Waterline",
+    "slug": "waterline",
+    "scheme": "waterline",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -12,7 +12,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Flood Time Machine to show simulated flood water over your camera view.",
+          "cameraPermission": "Allow Waterline to show simulated flood water over your camera view.",
           "recordAudioAndroid": false
         }
       ],
@@ -20,7 +20,7 @@
       [
         "expo-sensors",
         {
-          "motionPermission": "Allow Flood Time Machine to use motion sensors to keep simulated flood water level with the ground."
+          "motionPermission": "Allow Waterline to use motion sensors to keep simulated flood water level with the ground."
         }
       ],
       [

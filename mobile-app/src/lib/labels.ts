@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchWithTimeout } from './net';
 
 export type FloodLabel = 'flooded' | 'dry' | 'unsure';
 export type LabelRecord = { after_id: string; before_id: string; label: FloodLabel; labeler: string; at: string };
@@ -41,7 +42,7 @@ export async function saveLabeler(name: string): Promise<void> {
 export async function postLabel(apiBase: string, record: LabelRecord): Promise<boolean> {
   if (!apiBase) return false;
   try {
-    const r = await fetch(`${apiBase}/api/label`, {
+    const r = await fetchWithTimeout(`${apiBase}/api/label`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(record),

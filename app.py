@@ -12,8 +12,8 @@ from src.dossiers import load_dossier, save_dossier
 from src.vision import compare_images
 
 
-st.set_page_config(page_title="Flood Time Machine", page_icon="🌊", layout="wide")
-st.title("Flood Time Machine")
+st.set_page_config(page_title="Waterline", page_icon="🌊", layout="wide")
+st.title("Waterline")
 st.caption("Travel through historical Texas aerial imagery, inspect visible changes, and open a mobile camera portal.")
 
 default_dir = os.getenv("FLOOD_DATA_DIR", "")

@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -25,6 +26,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import catalogRaw from '../data/catalog.json';
 import { samplePairs } from '../data/samplePairs';
+import { fetchWithTimeout, readJson } from '../lib/net';
 import { LabelSheet } from './LabelScreen';
 import { RiseScreen } from './RiseScreen';
 import { ChangeCard, floodFor, waterFor } from './ChangeCard';
@@ -169,7 +171,8 @@ export function useAppData() {
 export function AppProvider({ children }: { children: ReactNode }) {
   const [apiInput, setApiInput] = useState(initialApi);
   const [apiBase, setApiBase] = useState(initialApi);
-  const [pairs, setPairs] = useState<Pair[]>([]);
+  const [pairs, setPairs] = useState<Pair[]>(bundledPairs);
+  const loadId = useRef(0);
   const [selected, setSelected] = useState(0);
   const [phase, setPhase] = useState<Phase>('after');
   const [compareMode, setCompareMode] = useState<CompareMode>('split');
@@ -179,26 +182,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState('');
 
   const load = useCallback(async (base: string) => {
+    const id = ++loadId.current; // ignore answers from older requests
     if (!base) {
       setPairs(bundledPairs);
+      setSelected(0);
       setError('');
+      setLoading(false);
       return;
     }
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`${base}/api/pairs`);
+      const response = await fetchWithTimeout(`${base}/api/pairs`, {}, 20_000);
       if (!response.ok) throw Error(`Server returned ${response.status}`);
-      const data: Pair[] = await response.json();
-      if (!Array.isArray(data)) throw Error('Unexpected dataset response structure');
-      setPairs(rankPairs(data));
+      const data = await readJson<Pair[]>(response);
+      if (!Array.isArray(data) || !data.length) throw Error('The server has no before/after pairs');
+      const valid = data.filter(p => p && p.before_id && p.after_id && p.before_url && p.after_url);
+      if (id !== loadId.current) return;
+      setPairs(rankPairs(valid));
       setSelected(0);
-      if (!data.length) setError('No before/after image pairs were found in catalog.');
     } catch (cause) {
+      if (id !== loadId.current) return;
       setPairs(bundledPairs);
-      setError(`Could not connect to ${base}. Showing the built-in catalog instead. (${cause instanceof Error ? cause.message : 'Check host'})`);
+      setSelected(0);
+      setError(`Could not load from ${base}, so the built-in catalog is shown. ${cause instanceof Error ? cause.message : ''}`);
     } finally {
-      setLoading(false);
+      if (id === loadId.current) setLoading(false);
     }
   }, []);
 
@@ -238,12 +247,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError('Enter an address starting with http:// or https://');
       return;
     }
+    if (base === apiBase) load(base); // same address: reload; otherwise the effect loads it
     setApiBase(base);
-    load(base);
     router.navigate('/explore');
   }
 
-  const currentPair = pairs[selected] || filtered[0] || bundledPairs[0];
+  const currentPair = pairs[Math.min(selected, pairs.length - 1)] || filtered[0] || bundledPairs[0];
 
   const submitReview = useCallback(async (agreement: string, notes: string = '') => {
     if (!currentPair) return;
@@ -268,7 +277,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // If connected to server, persist to reviews.jsonl
     if (apiBase) {
       try {
-        await fetch(`${apiBase}/api/review`, {
+        await fetchWithTimeout(`${apiBase}/api/review`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(reviewData),
@@ -445,8 +454,8 @@ export function AppScreen({ tab }: { tab: Tab }) {
             <View style={s.markLineShort} />
           </View>
           <View>
-            <Text style={s.brand}>Flood Time Machine</Text>
-            <Text style={s.brandSub}>Texas Historical Flood Evidence</Text>
+            <Text style={s.brand}>Waterline</Text>
+            <Text style={s.brandSub}>See how fast the water rises</Text>
           </View>
         </View>
         <Pressable
