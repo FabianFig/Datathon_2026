@@ -14,7 +14,6 @@ export default function RootLayout() {
           <Tabs.Screen name="explore" />
           <Tabs.Screen name="compare" />
           <Tabs.Screen name="settings" />
-          <Tabs.Screen name="label" options={{ href: null }} />
         </Tabs>
       </AppProvider>
     </SafeAreaProvider>

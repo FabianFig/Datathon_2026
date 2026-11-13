@@ -25,6 +25,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import catalogRaw from '../data/catalog.json';
 import { samplePairs } from '../data/samplePairs';
+import { LabelSheet } from './LabelScreen';
 import { RiseScreen } from './RiseScreen';
 import { ChangeCard, waterFor } from './ChangeCard';
 
@@ -394,6 +395,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
   const displayedImage = phase === 'before' ? beforeImg : afterImg;
 
   // Page the list 30 at a time; a new search or filter starts from the top
+  const [labelOpen, setLabelOpen] = useState(false);
   const PAGE = 30;
   const listKey = `${query}|${filterMode}`;
   const [visible, setVisible] = useState({ key: listKey, n: PAGE });
@@ -499,7 +501,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
           <Pressable
             accessibilityRole="button"
             accessibilityHint="Opens a screen to mark photos as flooded or not"
-            onPress={() => router.push('/label')}
+            onPress={() => setLabelOpen(true)}
             style={({ pressed }) => [s.labelCta, pressed && s.pressed]}
           >
             <View style={{ flex: 1 }}>
@@ -508,6 +510,8 @@ export function AppScreen({ tab }: { tab: Tab }) {
             </View>
             <Text style={s.chevron}>›</Text>
           </Pressable>
+
+          <LabelSheet visible={labelOpen} onClose={() => setLabelOpen(false)} pairs={pairs} apiBase={apiBase} />
 
           {/* Search & Filter Bar */}
           <View style={s.searchSection}>

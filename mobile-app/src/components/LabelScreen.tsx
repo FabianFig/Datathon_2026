@@ -1,10 +1,9 @@
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Image, Modal, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { hash, loadLabeler, loadLabels, postLabel, saveLabeler, saveLabels, type FloodLabel, type LabelRecord } from '../lib/labels';
-import { useAppData, type Pair } from './AppScreen';
+import type { Pair } from './AppScreen';
 import { waterFor } from './ChangeCard';
 
 const TARGET = 150;
@@ -24,8 +23,21 @@ function labelQueue(pairs: Pair[]): Pair[] {
   return picked.sort((a, c) => hash(a.after_id + 'q') - hash(c.after_id + 'q'));
 }
 
-export function LabelScreen() {
-  const { pairs, apiBase } = useAppData();
+/**
+ * Full-screen labelling sheet. It is a Modal rather than a route: hidden tab
+ * routes (href: null) are treated as protected in this Expo Router version and
+ * can't be navigated to. The Modal gets its own SafeAreaProvider so the header
+ * clears the notch.
+ */
+export function LabelSheet({ visible, onClose, pairs, apiBase }: { visible: boolean; onClose: () => void; pairs: Pair[]; apiBase: string }) {
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaProvider>{visible && <LabelScreen onClose={onClose} pairs={pairs} apiBase={apiBase} />}</SafeAreaProvider>
+    </Modal>
+  );
+}
+
+function LabelScreen({ onClose, pairs, apiBase }: { onClose: () => void; pairs: Pair[]; apiBase: string }) {
   const queue = useMemo(() => labelQueue(pairs), [pairs]);
   const [labels, setLabels] = useState<Record<string, LabelRecord>>({});
   const [labeler, setLabeler] = useState('');
@@ -98,7 +110,7 @@ export function LabelScreen() {
   return (
     <SafeAreaView style={st.root} edges={['top', 'bottom']}>
       <View style={st.top}>
-        <Pressable onPress={() => router.navigate('/explore')} accessibilityRole="button" style={st.topBtn} hitSlop={8}>
+        <Pressable onPress={onClose} accessibilityRole="button" style={st.topBtn} hitSlop={8}>
           <Text style={st.topBtnText}>Done</Text>
         </Pressable>
         <Text style={st.progress} accessibilityLiveRegion="polite">
