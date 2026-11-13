@@ -529,6 +529,7 @@ export function RiseScreen() {
       if (p?.granted) {
         setCamIssue(null);
         setView('camera');
+        if (!spotSet) setMeasuring(true); // first time: start aiming right away
       } else {
         setCamIssue('denied');
       }
@@ -539,10 +540,15 @@ export function RiseScreen() {
 
   // Measure the spot under the centre crosshair: its depression angle and the
   // phone's height give the distance (no finger in the way of the view).
+  // While aiming, the water and ruler follow the crosshair live, so you can
+  // see them land on the wall before locking.
+  const aimDist = measuring && cameraOn && layout.W > 1 ? distanceFromTap(0, pose, focalPx(layout.W, layout.H, fovDeg), eyeM) : null;
+  const shownDist = measuring && aimDist ? aimDist : distM;
+
   function markSpot() {
-    const d = distanceFromTap(0, pose, focalPx(layout.W, layout.H, fovDeg), eyeM);
+    const d = aimDist;
     if (!d) {
-      setTapHint('The + is at or above eye level. Tilt down until it sits where the ground meets the wall.');
+      setTapHint('The + is above the ground. Tilt down until it sits at the bottom of a wall or car.');
       AccessibilityInfo.announceForAccessibility('Tilt down so the crosshair is on the ground');
       return;
     }
@@ -583,7 +589,7 @@ export function RiseScreen() {
   // One bottom banner, most important message first
   let banner: { tone: 'info' | 'warn' | 'alert'; text: string } | null = null;
   if (cameraOn && measuring) {
-    banner = { tone: 'info', text: tapHint || 'Aim the + where the ground meets a wall, car or curb, then tap Mark.' };
+    banner = { tone: 'info', text: tapHint || 'Point the + at the bottom of a wall, car or curb. The water follows it.' };
   } else if (cameraOn && flash) {
     banner = { tone: 'info', text: flash };
   } else if (cameraOn && sensorStatus === 'denied') {
@@ -595,7 +601,7 @@ export function RiseScreen() {
   } else if (cameraOn && sensorStatus === 'ok' && pose.pitch > 0.6) {
     banner = { tone: 'info', text: 'Tilt the phone down toward the ground.' };
   } else if (cameraOn && !spotSet) {
-    banner = { tone: 'info', text: 'Tap Set spot to place the water on a wall, car or curb ahead of you.' };
+    banner = { tone: 'info', text: 'Tap Place water to put it on a wall, car or curb ahead of you.' };
   } else if (gaugeLost) {
     banner = { tone: 'alert', text: 'The river gauge stopped reporting here. The water kept rising.' };
   }
@@ -618,14 +624,28 @@ export function RiseScreen() {
               }}
             />
             {layout.W > 1 && (
-              <WaterOverlay W={layout.W} H={layout.H} pose={pose} fovDeg={fovDeg} eyeM={eyeM} distM={distM} depthM={depthM} flow={flow} />
+              <WaterOverlay W={layout.W} H={layout.H} pose={pose} fovDeg={fovDeg} eyeM={eyeM} distM={shownDist} depthM={depthM} flow={flow} />
             )}
             {measuring && (
               <View style={st.reticle} pointerEvents="none">
                 <View style={st.reticleH} />
                 <View style={st.reticleV} />
                 <View style={st.reticleDot} />
+                <View style={st.reticleTag}>
+                  <Text style={st.reticleTagText}>{aimDist ? `${Math.round(aimDist * FT_PER_M)} ft away` : 'Aim lower'}</Text>
+                </View>
               </View>
+            )}
+            {measuring && (
+              <Pressable
+                onPress={markSpot}
+                disabled={!aimDist}
+                accessibilityRole="button"
+                accessibilityLabel={aimDist ? `Lock the water on the spot ${Math.round(aimDist * FT_PER_M)} feet away` : 'Aim lower to lock a spot'}
+                style={[st.lockBtn, !aimDist && st.lockBtnDisabled]}
+              >
+                <Text style={st.lockText}>Lock here</Text>
+              </Pressable>
             )}
           </View>
         ) : (
@@ -651,9 +671,6 @@ export function RiseScreen() {
           <View style={st.floatCol}>
             {measuring ? (
               <>
-                <Pressable onPress={markSpot} accessibilityRole="button" accessibilityLabel="Mark the spot under the crosshair" style={[st.floatBtn, st.floatBtnPrimary]}>
-                  <Text style={[st.floatText, st.floatTextPrimary]}>Mark</Text>
-                </Pressable>
                 <Pressable
                   onPress={() => {
                     setMeasuring(false);
@@ -674,7 +691,7 @@ export function RiseScreen() {
                 accessibilityRole="button"
                 style={[st.floatBtn, !spotSet && st.floatBtnPrimary]}
               >
-                <Text style={[st.floatText, !spotSet && st.floatTextPrimary]}>{spotSet ? 'Move spot' : 'Set spot'}</Text>
+                <Text style={[st.floatText, !spotSet && st.floatTextPrimary]}>{spotSet ? 'Re-aim' : 'Place water'}</Text>
               </Pressable>
             )}
           </View>
@@ -866,7 +883,7 @@ export function RiseScreen() {
         {cameraOn && showCal && (
           <View style={st.card}>
             <Text style={st.cardText}>
-              {spotSet ? `Your spot is ${(distM * FT_PER_M).toFixed(0)} ft away.` : 'No spot set yet, so the gauge stands 13 ft ahead.'} The phone is held{' '}
+              {spotSet ? `Your spot is ${(distM * FT_PER_M).toFixed(0)} ft away.` : 'No spot placed yet, so the water is drawn 13 ft ahead.'} The phone is held{' '}
               {formatDepth(eyeM * FT_PER_M)} above the ground; match this to how you are holding it.
             </Text>
             <View style={st.row}>
@@ -995,9 +1012,14 @@ const st = StyleSheet.create({
   floatBtnPrimary: { backgroundColor: K.green },
   floatText: { fontSize: 14, fontWeight: '700', color: K.ink },
   floatTextPrimary: { color: K.white },
-  reticle: { position: 'absolute', left: '50%', top: '50%', width: 44, height: 44, marginLeft: -22, marginTop: -22, alignItems: 'center', justifyContent: 'center' },
+  reticle: { position: 'absolute', left: '50%', top: '50%', width: 120, height: 44, marginLeft: -60, marginTop: -22, alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
   reticleH: { position: 'absolute', width: 44, height: 2, backgroundColor: '#FFFFFF', borderRadius: 1 },
   reticleV: { position: 'absolute', width: 2, height: 44, backgroundColor: '#FFFFFF', borderRadius: 1 },
+  reticleTag: { position: 'absolute', top: 30, minWidth: 84, alignItems: 'center', backgroundColor: 'rgba(17,24,21,0.78)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
+  reticleTagText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  lockBtn: { position: 'absolute', bottom: 64, alignSelf: 'center', minHeight: 48, paddingHorizontal: 28, borderRadius: 24, backgroundColor: K.green, alignItems: 'center', justifyContent: 'center' },
+  lockBtnDisabled: { opacity: 0.45 },
+  lockText: { color: K.white, fontSize: 16, fontWeight: '700' },
   reticleDot: { width: 8, height: 8, borderRadius: 4, borderWidth: 2, borderColor: K.green, backgroundColor: '#FFFFFF' },
   playRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   playRound: { width: 48, height: 48, borderRadius: 24, backgroundColor: K.green, alignItems: 'center', justifyContent: 'center' },
