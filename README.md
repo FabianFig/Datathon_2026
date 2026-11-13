@@ -75,7 +75,7 @@ npx expo start --lan
 
 Install **Expo Go** on your phone and scan the QR code printed by Expo. This project uses Expo SDK 58 to match current Expo Go. For remote testing from anywhere, use `npx expo start --tunnel`. With `--lan`, your phone and the machine running Expo need to share a reachable network. If that network isolates devices, restart with `npx expo start --tunnel ngrok` and scan the new QR code. In **Settings**, enter `http://YOUR_REACHABLE_HOST:8765`, then select a pair in Explore. If the GB10 is only reachable by SSH from your laptop, run the data service through an SSH tunnel and expose that tunnel to the phone through a trusted local network or HTTPS endpoint. `127.0.0.1` on the phone points to the phone itself.
 
-The app opens with eight real public sample pairs, so you can test Explore and Compare before connecting the data service. Their images load from Hugging Face and require internet access. Connecting the service replaces the samples with the full paired catalog and available model dossiers.
+The app ships with all 575 UTSA before/after pairs (`mobile-app/src/data/catalog.json`, regenerated with `python export_catalog.py`), so Explore and Compare work in Expo Go without a server. Images load from Hugging Face and need internet access. The data service is optional; it adds live reviews and new model dossiers.
 
 The app requests camera permission only after **Use camera** is tapped on Rise, and the side view works without it. It uses native labeled controls and text findings so the comparison remains usable without the visual overlay. The old `mobile/` folder is a browser prototype and is not the mobile deliverable.
 

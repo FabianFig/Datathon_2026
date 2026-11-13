@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
+import catalogRaw from '../data/catalog.json';
 import { samplePairs } from '../data/samplePairs';
 import { RiseScreen } from './RiseScreen';
 import { ChangeCard, changeFor } from './ChangeCard';
@@ -73,6 +74,12 @@ export type Pair = {
 };
 
 type Tab = 'Rise' | 'Explore' | 'Compare' | 'Settings';
+
+// Every UTSA before/after pair ships with the app (export_catalog.py), so
+// Expo Go shows the whole dataset without a server. The original sample
+// pairs keep their richer model notes.
+const sampleByAfter = new Map((samplePairs as unknown as Pair[]).map(p => [p.after_id, p]));
+const bundledPairs: Pair[] = (catalogRaw as unknown as Pair[]).map(p => ({ ...sampleByAfter.get(p.after_id), ...p }));
 type Phase = 'before' | 'after';
 type CompareMode = 'split' | 'toggle' | 'sideBySide';
 
@@ -150,7 +157,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const load = useCallback(async (base: string) => {
     if (!base) {
-      setPairs(samplePairs as unknown as Pair[]);
+      setPairs(bundledPairs);
       setError('');
       return;
     }
@@ -165,8 +172,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSelected(0);
       if (!data.length) setError('No before/after image pairs were found in catalog.');
     } catch (cause) {
-      setPairs(samplePairs as unknown as Pair[]);
-      setError(`Could not connect to ${base}. Reverted to offline samples. (${cause instanceof Error ? cause.message : 'Check host'})`);
+      setPairs(bundledPairs);
+      setError(`Could not connect to ${base}. Showing the built-in catalog instead. (${cause instanceof Error ? cause.message : 'Check host'})`);
     } finally {
       setLoading(false);
     }
@@ -210,7 +217,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     router.navigate('/explore');
   }
 
-  const currentPair = pairs[selected] || filtered[0] || samplePairs[0];
+  const currentPair = pairs[selected] || filtered[0] || bundledPairs[0];
 
   const submitReview = useCallback(async (agreement: string, notes: string = '') => {
     if (!currentPair) return;
@@ -377,10 +384,16 @@ export function AppScreen({ tab }: { tab: Tab }) {
     currentPair,
   } = useAppData();
 
-  const pair = currentPair || pairs[selected] || samplePairs[0];
+  const pair = currentPair || pairs[selected] || bundledPairs[0];
   const beforeImg = url(apiBase, pair?.before_url || '');
   const afterImg = url(apiBase, pair?.after_url || '');
   const displayedImage = phase === 'before' ? beforeImg : afterImg;
+
+  // Page the list 30 at a time; a new search or filter starts from the top
+  const PAGE = 30;
+  const listKey = `${query}|${filterMode}`;
+  const [visible, setVisible] = useState({ key: listKey, n: PAGE });
+  const visibleCount = visible.key === listKey ? visible.n : PAGE;
 
   const setTab = (target: Tab) => {
     router.navigate(
@@ -416,7 +429,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
           style={s.statusPill}
         >
           <View style={[s.statusDot, { backgroundColor: apiBase ? '#15803D' : '#D97706' }]} />
-          <Text style={s.statusText}>{apiBase ? 'Live Catalog' : '8 Samples'}</Text>
+          <Text style={s.statusText}>{apiBase ? 'Live catalog' : `${bundledPairs.length} pairs`}</Text>
         </Pressable>
       </View>
 
@@ -539,9 +552,9 @@ export function AppScreen({ tab }: { tab: Tab }) {
           {/* Pair List */}
           <View style={s.listContainer}>
             <Text style={s.listCountHeader}>
-              Showing {filtered.length} {filtered.length === 1 ? 'pair' : 'pairs'}
+              {filtered.length} {filtered.length === 1 ? 'pair' : 'pairs'}
             </Text>
-            {filtered.slice(0, 50).map(item => {
+            {filtered.slice(0, visibleCount).map(item => {
               const isCurrent = item.before_id === pair?.before_id && item.after_id === pair?.after_id;
               const hasHighCue = item.after_cue?.above_threshold;
               const isReviewed = !!item.review;
@@ -580,6 +593,11 @@ export function AppScreen({ tab }: { tab: Tab }) {
                           <Text style={s.cueAlertText}>Flood Cue Flag</Text>
                         </View>
                       )}
+                      {(changeFor(item.after_id)?.percentile ?? 0) >= 90 && (
+                        <View style={s.cueAlertPill}>
+                          <Text style={s.cueAlertText}>Top 10% change</Text>
+                        </View>
+                      )}
                       {isReviewed && (
                         <View style={s.reviewedPill}>
                           <Text style={s.reviewedText}>Reviewed</Text>
@@ -593,8 +611,17 @@ export function AppScreen({ tab }: { tab: Tab }) {
                 </Pressable>
               );
             })}
-            {filtered.length > 50 && (
-              <Text style={s.footerNotice}>Showing first 50 results. Use search to narrow down.</Text>
+            {filtered.length > visibleCount && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Show more pairs. ${filtered.length - visibleCount} more`}
+                onPress={() => setVisible({ key: listKey, n: visibleCount + PAGE })}
+                style={s.buttonSecondary}
+              >
+                <Text style={s.buttonSecondaryText}>
+                  Show more ({filtered.length - visibleCount} left)
+                </Text>
+              </Pressable>
             )}
           </View>
         </ScrollView>
@@ -944,7 +971,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
               accessibilityLabel="Enter dataset backend URL"
             />
             <Text style={s.fieldHelp}>
-              Enter your computer&apos;s LAN IP (printed in the terminal when starting mobile_server.py). Leave blank to use bundled sample pairs.
+              Enter your computer&apos;s LAN IP (printed in the terminal when starting mobile_server.py). Leave blank to use the built-in catalog of all 575 pairs.
             </Text>
 
             <Pressable
@@ -959,7 +986,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
             {apiBase ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Disconnect and use offline samples"
+                accessibilityLabel="Disconnect and use the built-in catalog"
                 onPress={() => {
                   setApiInput('');
                   setApiBase('');
@@ -967,7 +994,7 @@ export function AppScreen({ tab }: { tab: Tab }) {
                 }}
                 style={[s.buttonSecondary, { marginTop: 10 }]}
               >
-                <Text style={s.buttonSecondaryText}>Disconnect (Use Offline Samples)</Text>
+                <Text style={s.buttonSecondaryText}>Disconnect (use built-in catalog)</Text>
               </Pressable>
             ) : null}
           </View>
