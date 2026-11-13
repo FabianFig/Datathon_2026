@@ -72,9 +72,21 @@ const SETTINGS_KEY = 'rise.calibration.v1';
 const DEFAULTS = { eyeM: 1.4, fovDeg: 69, pitchOffset: 0, groundFt: 20 };
 
 // --------------------------------------------------------------------------- camera
-/** Live preview, memoised so 50 Hz sensor updates never re-render the camera. */
+/**
+ * Live preview, memoised so sensor updates never re-render it.
+ *
+ * expo-camera (iOS) starts its capture session once per native view. If React
+ * Native ever moves that view to a new parent, the session is stopped and never
+ * restarted, leaving the last frame frozen on screen. So the camera sits in its
+ * own wrapper that can never be flattened away (collapsable={false}), and every
+ * ancestor keeps constant props.
+ */
 const LiveCamera = memo(function LiveCamera({ onError }: { onError: () => void }) {
-  return <CameraView style={StyleSheet.absoluteFill} facing="back" animateShutter={false} onMountError={onError} />;
+  return (
+    <View style={StyleSheet.absoluteFill} collapsable={false} pointerEvents="none">
+      <CameraView style={StyleSheet.absoluteFill} facing="back" animateShutter={false} onMountError={onError} />
+    </View>
+  );
 });
 
 // --------------------------------------------------------------------------- sensors
@@ -487,6 +499,7 @@ export function RiseScreen() {
   const [flash, setFlash] = useState('');
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [cameraKey, setCameraKey] = useState(0);
   const [permission, requestPermission] = useCameraPermissions();
   // Tabs stay mounted; release the camera and pause when another tab is showing
   const focused = useIsFocused();
@@ -693,8 +706,14 @@ export function RiseScreen() {
         onLayout={e => setLayout({ W: e.nativeEvent.layout.width, H: e.nativeEvent.layout.height })}
       >
         {cameraOn ? (
-          <View style={StyleSheet.absoluteFill} accessible={!measuring} accessibilityLabel="Camera view with simulated flood water">
-            <LiveCamera onError={onCameraError} />
+          <View style={StyleSheet.absoluteFill} collapsable={false}>
+            <LiveCamera key={cameraKey} onError={onCameraError} />
+            <View
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+              accessible
+              accessibilityLabel={`Camera view with simulated flood water ${formatDepth(depth)} deep`}
+            />
             {layout.W > 1 && (
               <WaterOverlay W={layout.W} H={layout.H} pose={pose} fovDeg={fovDeg} eyeM={eyeM} distM={shownDist} depthM={depthM} flow={flow} spotOffsetX={measuring ? 0 : spotSet ? offsetForBearing(spotYaw, yaw, focalPx(layout.W, layout.H, fovDeg)) : null} />
             )}
@@ -972,6 +991,9 @@ export function RiseScreen() {
             </Pressable>
             <Pressable onPress={resetCalibration} accessibilityRole="button" style={st.linkRow}>
               <Text style={st.link}>Reset calibration</Text>
+            </Pressable>
+            <Pressable onPress={() => setCameraKey(k => k + 1)} accessibilityRole="button" style={st.linkRow}>
+              <Text style={st.link}>Restart camera</Text>
             </Pressable>
             <Text style={st.noteSmall}>
               Depth comes from the phone’s tilt sensors and your tap, which works in Expo Go. LiDAR depth on Pro iPhones needs a
